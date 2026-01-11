@@ -4,3 +4,5 @@ node_modules/
 dist/
 .env
 *.txt
+*-lock.json
+.DS_Store
