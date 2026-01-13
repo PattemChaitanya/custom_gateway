@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 import os
 import logging
-from api import user
+from app.api import user
 
 logging.basicConfig(
     level=logging.DEBUG,
