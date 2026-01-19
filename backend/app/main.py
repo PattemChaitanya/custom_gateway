@@ -5,6 +5,7 @@ from fastapi.security import APIKeyHeader
 import os
 import logging
 from app.api import user
+from app.api.auth import auth_router
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -29,6 +30,7 @@ app.add_middleware(
 )
 
 app.include_router(user.router, prefix="/user", tags=["user"])
+app.include_router(auth_router.router)
 
 
 @app.get("/")
