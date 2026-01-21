@@ -32,6 +32,7 @@ app.add_middleware(
 app.include_router(user.router, prefix="/user", tags=["user"])
 app.include_router(auth_router.router)
 
+# Note: DB schema creation is managed via Alembic migrations.
 
 @app.get("/")
 async def root():

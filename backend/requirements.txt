@@ -19,3 +19,5 @@ python-dotenv
 requests
 tenacity
 email-validator
+aiosqlite
+greenlet
