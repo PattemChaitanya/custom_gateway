@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, Request
+from fastapi.responses import JSONResponse
 from .auth_service import (
     login_user,
     reset_password,
@@ -32,22 +33,61 @@ async def get_me(current_user: dict = Depends(_get_current_user_dep)):
     return {"message": "Current user", "email": current_user.get("email")}
 
 @router.post("/login")
-async def login_route(payload: UserLogin, session: AsyncSession = Depends(get_db)):
-    return await login_user(payload.email, payload.password, session)
+async def login_route(payload: UserLogin, response: Response, session: AsyncSession = Depends(get_db)):
+    # login_user returns {'access_token': ..., 'refresh_token': ...}
+    data = await login_user(payload.email, payload.password, session)
+    # if login failed, return directly
+    if data.get("error"):
+        return data
+    # set refresh token as HttpOnly cookie and return access token in body
+    refresh = data.get("refresh_token")
+    if refresh:
+        # cookie settings: secure can be enabled in prod
+        response.set_cookie("refresh_token", refresh, httponly=True, samesite="lax")
+    return {"message": data.get("message"), "access_token": data.get("access_token")}
 
 @router.post("/reset-password")
 async def reset_password_route(payload: PasswordReset, session: AsyncSession = Depends(get_db)):
     return await reset_password(payload.email)
 
 @router.post("/refresh-tokens")
-async def refresh_tokens_route(payload: TokenRefresh, session: AsyncSession = Depends(get_db)):
-    return await refresh_tokens(payload.refresh_token, session)
+async def refresh_tokens_route(
+    request: Request, payload: TokenRefresh | None = None, session: AsyncSession = Depends(get_db)
+):
+    # prefer cookie if present (HttpOnly cookie set by login), otherwise fall back to payload
+    refresh_token = None
+    if payload and getattr(payload, "refresh_token", None):
+        refresh_token = payload.refresh_token
+    else:
+        refresh_token = request.cookies.get("refresh_token")
+
+    result = await refresh_tokens(refresh_token, session)
+    # if refresh returned a new refresh token, set it as cookie
+    if result.get("refresh_token"):
+        # set cookie on new refresh token
+        resp = JSONResponse(content={k: v for k, v in result.items() if k != "refresh_token"})
+        resp.set_cookie("refresh_token", result["refresh_token"], httponly=True, samesite="lax")
+        # include access_token in body if present
+        if result.get("access_token"):
+            resp.body = JSONResponse(content={"message": result.get("message"), "access_token": result.get("access_token")}).body
+        return resp
+    return result
 
 @router.post("/logout")
-async def logout(payload: TokenRefresh, session: AsyncSession = Depends(get_db)):
-    # revoke refresh token
-    await logout_refresh_token(payload.refresh_token, session)
-    # keep response simple
+async def logout(payload: TokenRefresh | None = None, request: Request = None, response: Response = None, session: AsyncSession = Depends(get_db)):
+    # support body-provided refresh_token or cookie
+    refresh_token = None
+    if payload and getattr(payload, "refresh_token", None):
+        refresh_token = payload.refresh_token
+    elif request:
+        refresh_token = request.cookies.get("refresh_token")
+
+    if refresh_token:
+        await logout_refresh_token(refresh_token, session)
+
+    # clear cookie
+    if response:
+        response.delete_cookie("refresh_token")
     return {"message": "User logged out"}
 
 @router.post("/register")
