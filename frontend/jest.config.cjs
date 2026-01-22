@@ -6,9 +6,13 @@ module.exports = {
     '^.+\\.(ts|tsx)$': 'ts-jest',
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  moduleNameMapper: {
+    '^.+\\.css$': '<rootDir>/__mocks__/styleMock.js',
+    '^.+\\.(png|jpg|jpeg|gif|svg)$': '<rootDir>/__mocks__/fileMock.js'
+  },
   globals: {
     'ts-jest': {
-      tsconfig: 'tsconfig.app.json',
+  tsconfig: 'tsconfig.jest.json',
     },
   },
 };

@@ -17,14 +17,16 @@ describe("Auth pages", () => {
     );
 
     fireEvent.change(screen.getByPlaceholderText(/email/i), { target: { value: "a@b.com" } });
-    fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: "pwd" } });
-    fireEvent.click(screen.getByText(/sign in/i));
+    fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: "password1" } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(authService.login).toHaveBeenCalled());
   });
 
   test("Register calls API and navigates to login", async () => {
-  global.fetch = jest.fn().mockResolvedValue({ json: () => ({ message: "User registered" }) });
+  // spy on axios api.post used by Register page
+  const api = require('../services/api').default;
+  const spy = jest.spyOn(api, 'post').mockResolvedValue({ data: { message: 'User registered' } });
 
     render(
       <BrowserRouter>
@@ -32,10 +34,11 @@ describe("Auth pages", () => {
       </BrowserRouter>
     );
 
-    fireEvent.change(screen.getByPlaceholderText(/email/i), { target: { value: "new@x.com" } });
-    fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: "pwd" } });
-    fireEvent.click(screen.getByText(/create account/i));
+  fireEvent.change(screen.getByPlaceholderText(/email/i), { target: { value: "new@x.com" } });
+  fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: "password1" } });
+  fireEvent.click(screen.getByRole('button', { name: /create account/i }));
 
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+  await waitFor(() => expect(spy).toHaveBeenCalled());
+  spy.mockRestore();
   });
 });

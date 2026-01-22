@@ -1,7 +1,17 @@
 import axios from "axios";
 import { getAuthStore } from "../hooks/useAuth";
 
-const API_URL = (import.meta.env.VITE_API_URL as string) || "http://localhost:8000";
+const API_URL = (() => {
+  // Use runtime-eval to access import.meta without causing TypeScript to require 'module' flags for tests
+  try {
+    // eslint-disable-next-line no-eval
+    const meta = eval('import.meta') as any;
+    if (meta && meta.env && meta.env.VITE_API_URL) return meta.env.VITE_API_URL as string;
+  } catch (e) {
+    // ignore - import.meta not available in this environment
+  }
+  return (process.env.VITE_API_URL as string) || 'http://localhost:8000';
+})();
 
 const api = axios.create({
   baseURL: API_URL,
