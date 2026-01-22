@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from logging.config import fileConfig
 import os
 
@@ -10,15 +11,16 @@ from alembic import context
 
 config = context.config
 
-# Interpret the config file for Python logging.
-fileConfig(config.config_file_name)
+# ensure project root is on sys.path so imports like `app.db.models` work
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 # add your model's MetaData object here for 'autogenerate' support
-import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from app.db.models import Base
+from app.db.models import Base  # noqa: E402
 
 target_metadata = Base.metadata
+
+# Interpret the config file for Python logging.
+fileConfig(config.config_file_name)
 
 
 def run_migrations_offline():

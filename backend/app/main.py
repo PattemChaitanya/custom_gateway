@@ -1,20 +1,14 @@
-from fastapi import FastAPI, HTTPException, Query, Header, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.security import APIKeyHeader
-import os
-import logging
 from app.api import user
 from app.api.auth import auth_router
+from .logging_config import configure_logging, get_logger
+from app.middleware.request_logging import register_request_logging
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger("streaming_backend")
-# logger = logging.getLogger(__name__)
-
-logger.info("Server starting...")
+# structured logging
+configure_logging(level="INFO")
+logger = get_logger("gateway")
+logger.info("Server starting")
 
 app = FastAPI(
     title="Gateway Management API",
@@ -28,6 +22,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
 )
+
+# register request logging middleware (redacts Authorization header)
+register_request_logging(app)
 
 app.include_router(user.router, prefix="/user", tags=["user"])
 app.include_router(auth_router.router)

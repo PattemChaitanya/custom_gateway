@@ -1,7 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from .progress_sql import DATABASE_URL, SQL_ECHO
-from typing import AsyncGenerator
 
 async def init_db():
     # import here to avoid circular imports
