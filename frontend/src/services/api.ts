@@ -2,15 +2,22 @@ import axios from "axios";
 import { getAuthStore } from "../hooks/useAuth";
 
 const API_URL = (() => {
-  // Use runtime-eval to access import.meta without causing TypeScript to require 'module' flags for tests
+  // Prefer Vite's import.meta.env when available; tests/runtime without import.meta will fall back.
   try {
-    // eslint-disable-next-line no-eval
-    const meta = eval('import.meta') as any;
-    if (meta && meta.env && meta.env.VITE_API_URL) return meta.env.VITE_API_URL as string;
+    const val = (import.meta as any)?.env?.VITE_API_URL as string | undefined;
+    if (val) return val;
   } catch (e) {
-    // ignore - import.meta not available in this environment
+    // import.meta may not be supported in this runtime — fall back to process.env
   }
-  return (process.env.VITE_API_URL as string) || 'http://localhost:8000';
+  // Guard access to `process` so this file can run in browser environments where `process` is undefined.
+  try {
+    if (typeof process !== "undefined" && (process as any).env && (process as any).env.VITE_API_URL) {
+      return (process as any).env.VITE_API_URL as string;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return 'http://localhost:8000';
 })();
 
 const api = axios.create({

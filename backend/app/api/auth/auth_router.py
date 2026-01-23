@@ -70,7 +70,8 @@ async def login_route(payload: UserLogin, response: Response, session: AsyncSess
     refresh = data.get("refresh_token")
     if refresh:
         set_refresh_cookie(response, refresh)
-    return {"message": data.get("message"), "access_token": data.get("access_token")}
+    # return both tokens in JSON for test clients; cookie still set for browsers
+    return {"message": data.get("message"), "access_token": data.get("access_token"), "refresh_token": refresh}
 
 @router.post("/reset-password")
 async def reset_password_route(payload: PasswordReset, session: AsyncSession = Depends(get_db)):

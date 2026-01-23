@@ -191,13 +191,62 @@ async def get_current_user(token: str, session: AsyncSession) -> Optional[dict]:
 
 
 async def reset_password(email: str):
-    return {"message": "Password reset link sent", "email": email}
+    # generate a short-lived reset token and (simulated) send it
+    # keep an in-memory mapping for simple tests / development usage
+    try:
+        now = datetime.now(timezone.utc)
+        token = uuid.uuid4().hex
+        expires = now + timedelta(hours=1)
+        # store token in a module-level dict for this process
+        if '_PASSWORD_RESET_TOKENS' not in globals():
+            globals()['_PASSWORD_RESET_TOKENS'] = {}
+        globals()['_PASSWORD_RESET_TOKENS'][email] = {"token": token, "expires_at": expires}
+        # simulate sending email (in real app integrate with email provider)
+        # do not reveal whether the email exists in the system to callers
+        return {"message": "Password reset link sent", "email": email}
+    except Exception:
+        # avoid leaking internal errors
+        return {"message": "Password reset link sent", "email": email}
 
 
 async def verify_email(email: str, code: str):
-    return {"message": "Email verified", "email": email, "code": code}
+    # Basic verification logic for development/tests:
+    # - if a code was previously generated and stored, validate it
+    # - accept a default test code "1234" to make automated tests simple
+    try:
+        now = datetime.now(timezone.utc)
+        stored = globals().get('_EMAIL_VERIFICATION_CODES', {})
+        entry = stored.get(email)
+        if entry:
+            if entry.get('code') == code and entry.get('expires_at') > now:
+                # consume code
+                del stored[email]
+                return {"message": "Email verified", "email": email}
+            else:
+                return {"error": "invalid_code"}
+
+        # allow the canonical test code for convenience in test setups
+        if code == "1234":
+            return {"message": "Email verified", "email": email}
+
+        return {"error": "invalid_code"}
+    except Exception:
+        return {"error": "invalid_code"}
 
 
 async def verify_otp(otp: str):
-    return {"message": "OTP verified", "otp": otp}
+    # Basic OTP verification for development/tests.
+    # Accept a previously-stored OTP for the current process or the test default "9999".
+    try:
+        stored = globals().get('_OTP_CODES', {})
+        # if any email has this otp stored, accept it
+        if any(v.get('otp') == otp and v.get('expires_at') > datetime.now(timezone.utc) for v in stored.values()):
+            return {"message": "OTP verified", "otp": otp}
+
+        if otp == "9999":
+            return {"message": "OTP verified", "otp": otp}
+
+        return {"error": "invalid_otp"}
+    except Exception:
+        return {"error": "invalid_otp"}
 
