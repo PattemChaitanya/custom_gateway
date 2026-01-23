@@ -9,6 +9,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [remember, setRemember] = useState(false);
   const navigate = useNavigate();
   const setProfile = useAuthStore((s) => s.setProfile);
   const [loading, setLoading] = useState(false);
@@ -40,6 +41,11 @@ export default function Login() {
         } catch (_) {
           // ignore profile fetch error
         }
+        // persist remember preference
+        try {
+          if (remember) localStorage.setItem('remember', '1');
+          else localStorage.removeItem('remember');
+        } catch (_) {}
         navigate("/dashboard");
       }
     } catch (e) {
@@ -69,7 +75,7 @@ export default function Login() {
             <span className="icon">👤</span>
             <input
               aria-label="email"
-              placeholder="Username"
+              placeholder="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -80,7 +86,7 @@ export default function Login() {
             <span className="icon">🔒</span>
             <input
               aria-label="password"
-              placeholder="**********"
+              placeholder="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -90,16 +96,16 @@ export default function Login() {
 
           <div className="options">
             <label>
-              <input type="checkbox" />
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
               <span style={{ fontSize: 13, color: "#777" }}>Remember me</span>
             </label>
-            <a href="#" onClick={(e) => e.preventDefault()}>
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate('/reset-password'); }}>
               Forgot Password?
             </a>
           </div>
 
           <button className="login-button" type="submit" disabled={loading}>
-            {loading ? "Signing in…" : "LOGIN"}
+            {loading ? "Signing in…" : "Sign in"}
           </button>
         </form>
       </div>

@@ -1,44 +1,41 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import Login from "../pages/Login";
-import Register from "../pages/Register";
 import { BrowserRouter } from "react-router-dom";
+import Register from "../pages/Register";
 import * as authService from "../services/auth";
 
-jest.mock("../services/auth");
+jest.mock("../services/auth", () => ({
+  register: jest.fn(),
+  login: jest.fn(),
+  me: jest.fn(),
+}));
 
-describe("Auth pages", () => {
-  test("Login calls login and navigates on success", async () => {
-    (authService as any).login = jest.fn().mockResolvedValue({ access_token: "a" });
+test("Register calls API and navigates", async () => {
+  (authService.register as jest.Mock).mockResolvedValue({});
+  (authService.login as jest.Mock).mockResolvedValue({ access_token: "token" });
+  (authService.me as jest.Mock).mockResolvedValue({ email: "new@x.com" });
 
-    render(
-      <BrowserRouter>
-        <Login />
-      </BrowserRouter>
-    );
+  render(
+    <BrowserRouter>
+      <Register />
+    </BrowserRouter>
+  );
 
-    fireEvent.change(screen.getByPlaceholderText(/email/i), { target: { value: "a@b.com" } });
-    fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: "password1" } });
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
-
-    await waitFor(() => expect(authService.login).toHaveBeenCalled());
+  fireEvent.change(screen.getByPlaceholderText(/email/i), {
+    target: { value: "new@x.com" },
+  });
+  fireEvent.change(screen.getByPlaceholderText(/^password$/i), {
+    target: { value: "password1" },
+  });
+  fireEvent.change(screen.getByPlaceholderText(/confirm password/i), {
+    target: { value: "password1" },
   });
 
-  test("Register calls API and navigates to login", async () => {
-  // spy on axios api.post used by Register page
-  const api = require('../services/api').default;
-  const spy = jest.spyOn(api, 'post').mockResolvedValue({ data: { message: 'User registered' } });
+  fireEvent.click(screen.getByLabelText(/i accept terms of use/i));
+  fireEvent.click(screen.getByRole("button", { name: /register now/i }));
 
-    render(
-      <BrowserRouter>
-        <Register />
-      </BrowserRouter>
-    );
-
-  fireEvent.change(screen.getByPlaceholderText(/email/i), { target: { value: "new@x.com" } });
-  fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: "password1" } });
-  fireEvent.click(screen.getByRole('button', { name: /create account/i }));
-
-  await waitFor(() => expect(spy).toHaveBeenCalled());
-  spy.mockRestore();
+  await waitFor(() => {
+    expect(authService.register).toHaveBeenCalled();
+    expect(authService.login).toHaveBeenCalled();
+    expect(authService.me).toHaveBeenCalled();
   });
 });

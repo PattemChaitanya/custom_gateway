@@ -30,6 +30,18 @@ export const handlers = [
     return res(ctx.status(201), ctx.json({ message: 'User registered' }));
   }),
 
+  rest.post('http://localhost:8000/auth/reset-password', async (req, res, ctx) => {
+    // accept any email and pretend to send reset link
+    const { email } = await req.json();
+    return res(ctx.status(200), ctx.json({ message: 'Password reset link sent', email }));
+  }),
+
+  rest.post('http://localhost:8000/auth/verify-otp', async (req, res, ctx) => {
+    const { otp } = await req.json();
+    if (otp === '9999') return res(ctx.status(200), ctx.json({ message: 'OTP verified', otp }));
+    return res(ctx.status(200), ctx.json({ error: 'invalid_otp' }));
+  }),
+
   rest.get('http://localhost:8000/auth/me', (req, res, ctx) => {
     // return email from Authorization bearer token
     const auth = req.headers.get('authorization') || '';

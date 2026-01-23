@@ -2,22 +2,20 @@ import axios from "axios";
 import { getAuthStore } from "../hooks/useAuth";
 
 const API_URL = (() => {
-  // Prefer Vite's import.meta.env when available; tests/runtime without import.meta will fall back.
-  try {
-    const val = (import.meta as any)?.env?.VITE_API_URL as string | undefined;
-    if (val) return val;
-  } catch (e) {
-    // import.meta may not be supported in this runtime — fall back to process.env
-  }
-  // Guard access to `process` so this file can run in browser environments where `process` is undefined.
+  // Prefer explicit VITE_API_URL via process.env (used in Jest and Node) or a
+  // runtime shim on globalThis (used by Vite in the browser).
   try {
     if (typeof process !== "undefined" && (process as any).env && (process as any).env.VITE_API_URL) {
       return (process as any).env.VITE_API_URL as string;
     }
-  } catch (e) {
-    // ignore
-  }
-  return 'http://localhost:8000';
+  } catch (_) {}
+
+  try {
+    const g = globalThis as any;
+    if (g && g.__VITE_API_URL) return g.__VITE_API_URL as string;
+  } catch (_) {}
+
+  return "http://localhost:8000";
 })();
 
 const api = axios.create({
