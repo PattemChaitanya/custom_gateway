@@ -14,6 +14,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
+    # optional comma-separated roles field for simple RBAC (e.g. 'admin,editor')
+    roles = Column(String, default='', nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -31,3 +33,17 @@ class RefreshToken(Base):
     revoked = Column(Boolean, default=False)
 
     user = relationship("User", back_populates="refresh_tokens")
+
+
+class OTP(Base):
+    __tablename__ = "otps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(320), nullable=False, index=True)
+    otp_hash = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    attempts = Column(Integer, default=0)
+    consumed = Column(Boolean, default=False)
+    transport = Column(String, nullable=True)  # e.g. 'email' or 'sms'
+

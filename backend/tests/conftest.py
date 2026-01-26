@@ -21,7 +21,10 @@ def run_alembic_upgrade():
                 test_db_path.unlink()
             except Exception:
                 pass
-        env["DATABASE_URL"] = f"sqlite+aiosqlite:///{str(test_db_path)}"
+    test_url = f"sqlite+aiosqlite:///{str(test_db_path)}"
+    env["DATABASE_URL"] = test_url
+    # also set DATABASE_URL in the current process so imported app uses same DB
+    os.environ["DATABASE_URL"] = test_url
     # run alembic using the same python interpreter to ensure module is found
     subprocess.check_call([sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"], cwd=str(HERE), env=env)
 

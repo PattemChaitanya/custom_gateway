@@ -23,3 +23,36 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials"
         )
+
+
+def require_role(role: str):
+    """Dependency factory that returns a dependency which enforces the given role.
+
+    - Accepts a single role string (case-sensitive match against comma-separated roles on the user)
+    - Superusers bypass role checks
+    """
+
+    async def _checker(current_user: dict = Depends(get_current_user)):
+        # current_user has keys: email, roles (comma-separated lowercase), is_superuser
+        if current_user.get('is_superuser'):
+            return current_user
+        roles_claim = (current_user.get('roles') or '')
+        user_roles = {r.strip().lower() for r in roles_claim.split(',') if r.strip()}
+
+        # Role hierarchy: admin > editor > viewer
+        hierarchy = {
+            'viewer': {'viewer'},
+            'editor': {'editor', 'viewer'},
+            'admin': {'admin', 'editor', 'viewer'},
+        }
+
+        allowed = hierarchy.get(role.lower())
+        if allowed is None:
+            # unknown role requested; deny
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+        if user_roles & allowed:
+            return current_user
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+    return _checker

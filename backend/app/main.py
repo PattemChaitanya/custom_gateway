@@ -20,10 +20,17 @@ async def lifespan(app: FastAPI):
     """
     try:
         init_engine_from_aws_env()
+        # If AWS env vars are present, reinitialize engine from them before creating tables
         await init_db()
         logger.info("Database initialized from AWS env vars (lifespan)")
     except RuntimeError as e:
-        logger.info("Skipping AWS DB init (lifespan): %s", str(e))
+        logger.info("Skipping AWS engine init (lifespan): %s", str(e))
+        # Even when AWS env vars are missing, ensure local DB tables exist (create_all)
+        try:
+            await init_db()
+            logger.info("Database initialized (lifespan) via metadata.create_all")
+        except Exception as ee:
+            logger.warning("Failed to initialize DB in lifespan: %s", str(ee))
 
     yield
 
@@ -37,9 +44,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # Prefer explicit origin when allow_credentials=True to avoid
+    # browsers rejecting wildcard origins with credentials.
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
+    # Explicitly allow Authorization and common headers used by the frontend.
+    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language", "Content-Language"],
+    max_age=600,
 )
 
 # register request logging middleware (redacts Authorization header)
