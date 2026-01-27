@@ -1,12 +1,7 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Link } from "react-router-dom";
 import "./App.css";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import ResetPassword from "./pages/ResetPassword";
-import VerifyOtp from "./pages/VerifyOtp";
-import Dashboard from "./pages/Dashboard";
-import ProtectedRoute from "./components/ProtectedRoute";
 import useAuthStore from "./hooks/useAuth";
+import AppRoutes from "./AppRoutes";
 
 function App() {
   const profile = useAuthStore((s) => s.profile);
@@ -22,21 +17,7 @@ function App() {
         </header>
 
         <main>
-          <Routes>
-            <Route path="/" element={<h1>Welcome to Gateway Portal</h1>} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/verify-otp" element={<VerifyOtp />} />
-            <Route path="/register" element={<Register />} />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
+          <AppRoutes />
         </main>
       </div>
     </BrowserRouter>

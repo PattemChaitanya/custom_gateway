@@ -208,30 +208,54 @@ async def register_user(email: str, password: str, session: AsyncSession):
     if existing:
         return {"error": "user_exists"}
     hashed = pwd_context.hash(password)
-    user = User(email=email, hashed_password=hashed)
+    # default role for new users when not provided by client
+    user = User(email=email, hashed_password=hashed, roles='viewer')
     session.add(user)
     try:
         await session.commit()
     except Exception as e:
-        # fallback: if DB schema lacks roles column, add it and retry
+        # fallback behavior for missing DB schema:
+        # - if the users table is missing: create all tables via metadata.create_all and retry
+        # - if the roles column is missing: ALTER TABLE to add it, then retry
         msg = str(e).lower()
-        if 'no such column' in msg and 'roles' in msg:
+        # try to rollback to reset session state
+        try:
+            await session.rollback()
+        except Exception:
+            pass
+
+        if 'no such table' in msg:
             try:
-                # rollback the failed transaction to reset session state
-                await session.rollback()
-                # add the missing column
+                # create missing tables
+                from app.db.connector import init_db
+
+                await init_db()
+            except Exception:
+                # if init_db fails, re-raise original
+                raise
+            # retry insert
+            user2 = User(email=email, hashed_password=hashed, roles='viewer')
+            session.add(user2)
+            await session.commit()
+            return {"message": "User registered", "email": email}
+
+        # SQLite may report missing column as either "no such column" or
+        # "table users has no column named roles"; accept both variants.
+        if (('no such column' in msg) or ('has no column' in msg)) and 'roles' in msg:
+            try:
+                # add the missing column and retry
                 await session.execute(text("ALTER TABLE users ADD COLUMN roles VARCHAR"))
                 await session.commit()
-                # recreate the user and retry the insert
-                user2 = User(email=email, hashed_password=hashed)
+                user2 = User(email=email, hashed_password=hashed, roles='viewer')
                 session.add(user2)
                 await session.commit()
                 return {"message": "User registered", "email": email}
             except Exception:
                 # if we still fail, re-raise original
                 raise
-        else:
-            raise
+
+        # unknown error: re-raise
+        raise
     return {"message": "User registered", "email": email}
 
 
@@ -492,6 +516,24 @@ async def set_user_roles(email: str, roles: str, session: AsyncSession):
                 except Exception:
                     return {"error": "db_schema_missing_roles"}
             return {"error": "db_error"}
+    except Exception:
+        return {"error": "internal_error"}
+
+
+async def list_users(session: AsyncSession):
+    """Return a list of users with basic fields (id, email, roles, is_active)."""
+    try:
+        q = await session.execute(select(User))
+        users = q.scalars().all()
+        result = []
+        for u in users:
+            result.append({
+                "id": getattr(u, 'id', None),
+                "email": getattr(u, 'email', None),
+                "roles": getattr(u, 'roles', ''),
+                "is_active": getattr(u, 'is_active', True),
+            })
+        return result
     except Exception:
         return {"error": "internal_error"}
 

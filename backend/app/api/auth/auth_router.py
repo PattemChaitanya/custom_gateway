@@ -25,6 +25,7 @@ from .auth_schema import (
 from .auth_dependency import get_current_user as _get_current_user_dep, require_role
 # from .auth_dependency import 
 from .auth_service import get_user_roles, set_user_roles
+from .auth_service import list_users
 from app.db.connector import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -201,4 +202,10 @@ async def verify_otp_route(payload: OTPVerification, session: AsyncSession = Dep
     # Here we attempt to verify by scanning recent entries (legacy behavior retained via service fallback)
     # Prefer passing email explicitly; for now call verify_otp with empty email to allow test OTP
     return await verify_otp(payload.email, payload.otp, session)
+
+
+@router.get("/users")
+async def get_users_route(current_user: dict = Depends(require_role('admin')), session: AsyncSession = Depends(get_db)):
+    """Admin-only endpoint that returns a list of users with basic fields."""
+    return await list_users(session)
 

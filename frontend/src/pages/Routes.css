@@ -1,0 +1,25 @@
+.routes-root {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 16px;
+  padding: 16px;
+}
+.routes-left { background: #f7f9fb; padding: 12px; border-right: 1px solid #e6ebef; }
+.routes-left ul { list-style: none; padding: 0; }
+.routes-left .api-title { font-weight: 700; margin-bottom: 8px; }
+.routes-left .active { font-weight: 700; }
+.routes-main { background: white; padding: 16px; border: 1px solid #e6ebef; }
+.routes-header { display: flex; justify-content: space-between; align-items: center; }
+.routes-controls { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+.routes-table { width: 100%; border-collapse: collapse; }
+.routes-table th, .routes-table td { text-align: left; padding: 8px; border-bottom: 1px solid #eef2f5; }
+.badge { padding: 4px 8px; border-radius: 4px; color: white; font-weight: 700; }
+.method-any { background: #2b8aef; }
+.method-post { background: #00a86b; }
+.method-get { background: #2b8aef; }
+.method-put { background: #ffb020; }
+.btn { padding: 8px 12px; margin-left: 8px; }
+.btn.primary { background: #2185d0; color: white; border: none; }
+.link { background: none; border: none; color: #f0a500; }
+.search { margin-left: auto; padding: 6px; width: 240px; }
+.routes-footer { margin-top: 12px; color: #666; }

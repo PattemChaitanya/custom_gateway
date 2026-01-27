@@ -1,0 +1,5 @@
+.create-api-root { padding: 16px; }
+.create-api-form .section { background: #fff; border: 1px solid #eef2f5; padding: 12px; margin-top: 12px; }
+.editor { margin-top: 8px; }
+.editor-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.editor textarea { width: 100%; font-family: monospace; }

@@ -124,3 +124,14 @@ export default defineConfig([
     Notes:
     - If `SameSite=None` is used for cookies, modern browsers require `Secure` to be true.
     - Avoid storing refresh tokens in localStorage in production; HttpOnly cookies are less exposed to XSS.
+
+    ### API Management UI added
+
+    A simple API management page was added at `/apis`.
+
+    Files added:
+    - `src/services/apis.ts` - axios wrappers for backend endpoints
+    - `src/components/ApiList.tsx` - simple list component
+    - `src/pages/APIs.tsx` - page with create form and list
+
+    This page integrates with the existing auth flow and is protected by `ProtectedRoute`.

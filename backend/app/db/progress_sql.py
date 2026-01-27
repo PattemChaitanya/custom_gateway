@@ -45,7 +45,7 @@ def build_aws_database_url() -> str | None:
 # Examples:
 #   - Explicit full URL: DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/dbname
 #   - AWS parts: AWS_DB_HOST, AWS_DB_NAME, AWS_DB_USER, AWS_DB_PASSWORD
-DATABASE_URL = os.getenv("DATABASE_URL") or build_aws_database_url() or "sqlite+aiosqlite:///./dev.db"
+DATABASE_URL = os.getenv("DATABASE_URL") or build_aws_database_url() or "sqlite+aiosqlite:///./backend/dev.db"
 
 
 # SQLAlchemy echo flag

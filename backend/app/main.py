@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi import Request
 from app.api import user
 from app.api.auth import auth_router
+from app.api.apis import router as apis_router
 from .logging_config import configure_logging, get_logger
 from app.middleware.request_logging import register_request_logging
 from app.db.connector import init_engine_from_aws_env, init_db
@@ -59,6 +62,29 @@ register_request_logging(app)
 
 app.include_router(user.router, prefix="/user", tags=["user"])
 app.include_router(auth_router.router)
+app.include_router(apis_router)
+
+
+# Ensure error responses include CORS headers when raised (some errors can bypass
+# middleware stack depending on where they occur). This handler wraps exceptions
+# and always attaches the appropriate CORS headers for known origins.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # Log the exception and return a safe error payload for the client.
+    logger.exception("Unhandled exception: %s", str(exc))
+
+    # Build a minimal JSON error response; do not leak internals in production.
+    content = {"error": "internal_server_error"}
+
+    # Respect origin if it's an allowed origin; otherwise omit Access-Control-Allow-Origin.
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin in ("http://localhost:3000", "http://localhost:5173"):
+        headers["Access-Control-Allow-Origin"] = origin
+        # allow credentials when origin is explicit
+        headers["Access-Control-Allow-Credentials"] = "true"
+
+    return JSONResponse(status_code=500, content=content, headers=headers)
 
 # Note: DB schema creation is managed via Alembic migrations.
 

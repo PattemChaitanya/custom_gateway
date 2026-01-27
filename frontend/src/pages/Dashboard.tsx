@@ -26,6 +26,9 @@ export default function Dashboard() {
       {profile ? (
         <div>
           <Typography>Welcome, {profile.email}</Typography>
+          <Button variant="contained" style={{ marginLeft: 12 }} onClick={() => navigate('/apis')}>
+            Manage APIs
+          </Button>
           <Button
             variant="outlined"
             onClick={async () => {
