@@ -5,7 +5,18 @@ from sqlalchemy import select
 from ...db import models
 
 
-async def create_api(db: AsyncSession, payload: Dict[str, Any]) -> models.API:
+async def create_api(db: AsyncSession | object, payload: Dict[str, Any]) -> models.API | object:
+    """Create an API either in the SQL DB or in the in-memory fallback.
+
+    The `db` argument can be an AsyncSession or an InMemoryDB instance. We
+    detect the latter by the presence of an attribute `in_memory` on the
+    object.
+    """
+    # In-memory path
+    if getattr(db, "in_memory", False):
+        return await db.create_api(payload)
+
+    # SQLAlchemy path
     # check for existing API with same name+version
     existing = await db.execute(
         select(models.API).where(models.API.name == payload.get("name"), models.API.version == payload.get("version"))
@@ -26,17 +37,23 @@ async def create_api(db: AsyncSession, payload: Dict[str, Any]) -> models.API:
     return api
 
 
-async def list_apis(db: AsyncSession) -> List[models.API]:
+async def list_apis(db: AsyncSession | object) -> List[models.API] | List[object]:
+    if getattr(db, "in_memory", False):
+        return await db.list_apis()
     result = await db.execute(select(models.API))
     return result.scalars().all()
 
 
-async def get_api(db: AsyncSession, api_id: int) -> Optional[models.API]:
+async def get_api(db: AsyncSession | object, api_id: int) -> Optional[models.API] | Optional[object]:
+    if getattr(db, "in_memory", False):
+        return await db.get_api(api_id)
     result = await db.execute(select(models.API).where(models.API.id == api_id))
     return result.scalar_one_or_none()
 
 
-async def update_api(db: AsyncSession, api: models.API, patch: Dict[str, Any]) -> models.API:
+async def update_api(db: AsyncSession | object, api: models.API | object, patch: Dict[str, Any]) -> models.API | object:
+    if getattr(db, "in_memory", False):
+        return await db.update_api(api, patch)
     for k, v in patch.items():
         if v is not None and hasattr(api, k):
             setattr(api, k, v)
@@ -46,7 +63,9 @@ async def update_api(db: AsyncSession, api: models.API, patch: Dict[str, Any]) -
     return api
 
 
-async def delete_api(db: AsyncSession, api: models.API) -> None:
+async def delete_api(db: AsyncSession | object, api: models.API | object) -> None:
+    if getattr(db, "in_memory", False):
+        return await db.delete_api(api)
     await db.delete(api)
     await db.commit()
 

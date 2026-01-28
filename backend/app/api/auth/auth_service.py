@@ -22,8 +22,11 @@ async def _fetch_user_by_email(session: AsyncSession, email: str):
     Returns a User instance-like object or None.
     """
     try:
+        print(session, "----> user")
         q = await session.execute(select(User).where(User.email == email))
+        print(session, "----> user", q)
         user = q.scalars().first()
+        print(user, "---> user", session, "---->", q)
         return user
     except Exception:
         # If the DB schema is older and missing columns (e.g., roles), attempt a raw fallback
@@ -261,6 +264,7 @@ async def register_user(email: str, password: str, session: AsyncSession):
 
 async def login_user(email: str, password: str, session: AsyncSession):
     user = await _fetch_user_by_email(session, email)
+    print(user, "--->", session)
     if not user:
         return {"error": "invalid_credentials"}
     if not pwd_context.verify(password, user.hashed_password):

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Container, Typography, TextField, Button, RadioGroup, FormControlLabel, Radio, Box, Alert } from '@mui/material';
+import { Container, Typography, TextField, Button, RadioGroup, FormControlLabel, Radio, Box, Alert, Stack } from '@mui/material';
 import { createAPI, getAPI, updateAPI } from '../services/apis';
 import { useNavigate } from 'react-router-dom';
-import './CreateAPI.css';
 import { useParams } from 'react-router-dom';
 
 export default function CreateAPI() {
@@ -54,51 +53,58 @@ export default function CreateAPI() {
   }, [editId]);
 
   return (
-    <Container maxWidth="md" className="create-api-root">
-      <Typography variant="h4" gutterBottom>Create API</Typography>
-      {success ? (
+    <Container maxWidth="md" sx={{ py: 2 }}>
+      <Typography variant="h4" gutterBottom>{editId ? 'Update API' : 'Create API'}</Typography>
+      {success && (
         <Alert severity="success" action={<Box>
           <Button size="small" onClick={() => navigate(`/apis/${(success as any).id}`)}>View API</Button>
           <Button size="small" onClick={() => { setSuccess(null); setName(''); setDescription(''); }}>Create another</Button>
-        </Box>}>API created successfully.</Alert>
-      ) : null}
+        </Box>} sx={{ mb: 2 }}>API created successfully.</Alert>
+      )}
 
-      {error ? <Alert severity="error">{error}</Alert> : null}
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      <form onSubmit={handleCreate} className="create-api-form">
-        <div className="section">
-          <Typography variant="h6">API Details</Typography>
-          <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} fullWidth required />
-          <TextField label="Description" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={2} style={{ marginTop: 12 }} />
-          <TextField label="Version" value={version} onChange={(e) => setVersion(e.target.value)} style={{ marginTop: 12 }} />
-          <Box style={{ marginTop: 12 }}>
-            <Typography variant="subtitle2">Type</Typography>
-            <RadioGroup row value={type} onChange={(e) => setType(e.target.value)}>
-              <FormControlLabel value="rest" control={<Radio />} label="REST API" />
-              <FormControlLabel value="graphql" control={<Radio />} label="GraphQL API" />
-            </RadioGroup>
-          </Box>
-        </div>
+      <Box component="form" onSubmit={handleCreate} sx={{ display: 'grid', gap: 3 }}>
+        <Box>
+          <Typography variant="h6" gutterBottom>API Details</Typography>
+          <Stack spacing={2}>
+            <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} fullWidth required />
+            <TextField label="Description" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={2} />
+            <TextField label="Version" value={version} onChange={(e) => setVersion(e.target.value)} />
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="subtitle2">Type</Typography>
+              <RadioGroup row value={type} onChange={(e) => setType(e.target.value)}>
+                <FormControlLabel value="rest" control={<Radio />} label="REST API" />
+                <FormControlLabel value="graphql" control={<Radio />} label="GraphQL API" />
+              </RadioGroup>
+            </Box>
+          </Stack>
+        </Box>
 
-        <div className="section">
-          <Typography variant="h6">Configuration Format</Typography>
+        <Box>
+          <Typography variant="h6" gutterBottom>Configuration Format</Typography>
           <RadioGroup row value={format} onChange={(e) => setFormat(e.target.value)}>
             <FormControlLabel value="resource" control={<Radio />} label="Resource Form" />
             <FormControlLabel value="json" control={<Radio />} label="JSON / YAML" />
             <FormControlLabel value="terraform" control={<Radio />} label="Terraform IAC" />
           </RadioGroup>
 
-          <div className="editor">
-            <div className="editor-header">JSON <Button size="small" onClick={() => setSample(JSON.stringify({ openapi: '3.0.0', info: { title: name || 'MyAPI', description: description || 'My new API', version } }, null, 2))}>Download Sample</Button></div>
-            <textarea value={sample} onChange={(e) => setSample(e.target.value)} rows={8} />
-          </div>
-        </div>
+          <Box sx={{ mt: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Typography>JSON</Typography>
+              <Button size="small" onClick={() => setSample(JSON.stringify({ openapi: '3.0.0', info: { title: name || 'MyAPI', description: description || 'My new API', version } }, null, 2))}>Download Sample</Button>
+            </Box>
+            <TextField value={sample} onChange={(e) => setSample(e.target.value)} multiline rows={8} fullWidth variant="outlined" />
+          </Box>
+        </Box>
 
-        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
           <Button onClick={() => navigate(-1)}>Cancel</Button>
-          <Button variant="contained" color="primary" type="submit" disabled={loading} onClick={handleCreate}>{loading ? 'Creating…' : 'Create API'}</Button>
-        </div>
-      </form>
+          <Button variant="contained" color="primary" type="submit" disabled={loading}>
+            {editId ? (loading ? 'Updating…' : 'Update API') : (loading ? 'Creating…' : 'Create API')}
+          </Button>
+        </Box>
+      </Box>
     </Container>
   );
 }

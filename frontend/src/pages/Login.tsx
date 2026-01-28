@@ -6,10 +6,11 @@ import { Typography, Alert } from "@mui/material";
 import "./Login.css";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  let hashedPassword = atob(localStorage.getItem('-prince') || "");
+  const [email, setEmail] = useState(atob(localStorage.getItem('-princem') || ""));
+  const [password, setPassword] = useState(hashedPassword);
   const [error, setError] = useState<string | null>(null);
-  const [remember, setRemember] = useState(false);
+  const [remember, setRemember] = useState(localStorage.getItem('remember') === '1');
   const navigate = useNavigate();
   const setProfile = useAuthStore((s) => s.setProfile);
   const [loading, setLoading] = useState(false);
@@ -30,22 +31,24 @@ export default function Login() {
     }
     try {
       setLoading(true);
+
       const r = await login(email, password);
       if (r.error) {
         setError(r.error);
       } else {
-        try {
-          // use auth.me service which attaches Authorization header via axios interceptor
-          const js = await me();
-          setProfile({ email: js.email });
-        } catch (_) {
-          // ignore profile fetch error
+        // use auth.me service which attaches Authorization header via axios interceptor
+        const js = await me();
+        setProfile({ email: js.email });
+        // persist remember preference before login so token setter can persist tokens
+        if (remember) {
+          localStorage.setItem('remember', '1');
+          localStorage.setItem('-princem', btoa(email));
+          localStorage.setItem('-prince', btoa(password));
+        } else {
+          localStorage.removeItem('remember');
+          localStorage.removeItem('-princem');
+          localStorage.removeItem('-prince');
         }
-        // persist remember preference
-        try {
-          if (remember) localStorage.setItem('remember', '1');
-          else localStorage.removeItem('remember');
-        } catch (_) {}
         navigate("/dashboard");
       }
     } catch (e) {

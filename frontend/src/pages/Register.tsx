@@ -43,10 +43,12 @@ export default function Register() {
           const loginResp = await login(email, password);
           if (loginResp && loginResp.access_token) {
             // populate profile
-            try {
-              const js = await me();
-              setProfile({ email: js.email });
-            } catch (_) { }
+            const js = await me();
+            setProfile({ email: js.email });
+            // persist remember preference before login so token setter can persist tokens
+            localStorage.setItem('remember', '1');
+            localStorage.setItem('-princem', btoa(email));
+            localStorage.setItem('-prince', btoa(password));
             navigate("/dashboard");
             return;
           }

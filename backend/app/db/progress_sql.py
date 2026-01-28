@@ -1,5 +1,6 @@
 import os
 from urllib.parse import quote_plus
+from pathlib import Path
 
 
 # Build a SQLAlchemy async URL for AWS Postgres when individual AWS_* env vars are
@@ -39,13 +40,20 @@ def build_aws_database_url() -> str | None:
 
 
 # Database URL. Prefer setting DATABASE_URL in environment for production. If not
-# provided, try to build one from AWS_* environment variables; otherwise fall
-# back to a local SQLite async DB for development/testing to avoid requiring an
-# external Postgres instance.
+# provided, try to build one from AWS_* environment variables. When neither are
+# present, keep DATABASE_URL as None so the connector can choose an in-memory
+# fallback instead of implicitly creating a sqlite DB here.
 # Examples:
 #   - Explicit full URL: DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/dbname
 #   - AWS parts: AWS_DB_HOST, AWS_DB_NAME, AWS_DB_USER, AWS_DB_PASSWORD
-DATABASE_URL = os.getenv("DATABASE_URL") or build_aws_database_url() or "sqlite+aiosqlite:///./backend/dev.db"
+# Resolve a sensible default sqlite path relative to the backend package so that
+# running the server from the `backend/` working directory does not produce a
+# duplicate `backend/backend/dev.db` path. For development we prefer an actual
+# sqlite file located at backend/dev.db. If you want an in-memory fallback,
+# unset DATABASE_URL and ensure AWS_* vars are not set (the connector will
+# fallback to the in-memory DB when DATABASE_URL is None).
+default_db_path = Path(__file__).resolve().parents[2] / "dev.db"
+DATABASE_URL = os.getenv("DATABASE_URL") or build_aws_database_url() or f"sqlite+aiosqlite:///{default_db_path}"
 
 
 # SQLAlchemy echo flag

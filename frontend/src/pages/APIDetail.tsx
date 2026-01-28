@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import './APIDetail.css';
 import api from '../services/api';
+import { Container, Grid, Paper, Typography, Box, TextField, Select, MenuItem, Button } from '@mui/material';
 
 export default function APIDetail() {
   const params = useParams();
@@ -28,68 +28,91 @@ export default function APIDetail() {
   }
 
   return (
-    <div className="api-detail-root">
-      <aside className="left-nav">
-        <h3>MyAPI</h3>
-        <ul>
-          <li>/</li>
-          <li className="active">/register</li>
-          <li>/login</li>
-          <li>/users</li>
-        </ul>
-      </aside>
+    <Container maxWidth="lg" sx={{ py: 2 }}>
+      <Grid container spacing={2}>
+        <Grid item xs={12} md={3}>
+          <Paper sx={{ p: 2, bgcolor: 'background.paper', color: 'text.primary' }} elevation={1}>
+            <Typography variant="h6">MyAPI</Typography>
+            <Box component="nav" sx={{ mt: 1 }}>
+              <Typography component="div">/</Typography>
+              <Typography component="div" sx={{ fontWeight: 700, mt: 0.5 }}>/register</Typography>
+              <Typography component="div">/login</Typography>
+              <Typography component="div">/users</Typography>
+            </Box>
+          </Paper>
+        </Grid>
 
-      <main className="method-panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2>ANY <span className="path">{path}</span></h2>
-          <div>MyAPI / {apiId}</div>
-        </div>
-        <div className="panels">
-          <section className="panel">
-            <h4>Method Request</h4>
-            <div className="row"><label>Authorization</label><div>API Key</div></div>
-            <div className="row"><label>Request Body Model</label><div>UserRegisterSchema</div></div>
-          </section>
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 2, bgcolor: 'background.paper', color: 'text.primary' }} elevation={1}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6">
+                {method} <Box component="span" sx={{ fontWeight: 600, ml: 1 }}>{path}</Box>
+              </Typography>
+              <Typography variant="body2">MyAPI / {apiId}</Typography>
+            </Box>
 
-          <section className="panel">
-            <h4>Request Validation</h4>
-            <div>Params Body: None</div>
-          </section>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 2, mt: 2 }}>
+              <Paper sx={{ p: 2, bgcolor: 'background.default' }} elevation={0}>
+                <Typography variant="subtitle1">Method Request</Typography>
+                <Box sx={{ mt: 1 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography>Authorization</Typography>
+                    <Typography color="text.secondary">API Key</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                    <Typography>Request Body Model</Typography>
+                    <Typography color="text.secondary">UserRegisterSchema</Typography>
+                  </Box>
+                </Box>
+              </Paper>
 
-          <section className="panel">
-            <h4>Logs</h4>
-            <pre className="log">START Request:\nReceived request: {path}\nAuthorization: API Key\nEND Request</pre>
-          </section>
-        </div>
-      </main>
+              <Paper sx={{ p: 2, bgcolor: 'background.default' }} elevation={0}>
+                <Typography variant="subtitle1">Request Validation</Typography>
+                <Typography color="text.secondary">Params Body: None</Typography>
+              </Paper>
 
-      <aside className="test-panel">
-        <div className="testing-box">
-          <h4>TESTING</h4>
-          <div className="form-row"><label>Method:</label>
-            <select value={method} onChange={(e) => setMethod(e.target.value)}>
-              <option>GET</option>
-              <option>POST</option>
-              <option>PUT</option>
-              <option>DELETE</option>
-            </select>
-          </div>
-          <div className="form-row"><label>Path:</label>
-            <input value={path} onChange={(e) => setPath(e.target.value)} />
-          </div>
-          <div className="form-row"><label>Request Body</label>
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={8} />
-          </div>
-          <button onClick={handleTest}>Test</button>
-          <div className="metrics">
-            <div>Latency {latency ? `${latency} ms` : '—'}</div>
-          </div>
-          <div className="response">
-            <h5>Response</h5>
-            <pre>{response}</pre>
-          </div>
-        </div>
-      </aside>
-    </div>
+              <Paper sx={{ p: 2, bgcolor: 'background.default' }} elevation={0}>
+                <Typography variant="subtitle1">Logs</Typography>
+                <Box component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', m: 0 }}>
+                  {`START Request
+Received request: ${path}
+Authorization: API Key
+END Request`}
+                </Box>
+              </Paper>
+            </Box>
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12} md={3}>
+          <Paper sx={{ p: 2, bgcolor: 'background.paper', color: 'text.primary' }} elevation={1}>
+            <Typography variant="subtitle1">Testing</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
+              <Select size="small" value={method} onChange={(e) => setMethod(e.target.value as string)}>
+                <MenuItem value="GET">GET</MenuItem>
+                <MenuItem value="POST">POST</MenuItem>
+                <MenuItem value="PUT">PUT</MenuItem>
+                <MenuItem value="DELETE">DELETE</MenuItem>
+              </Select>
+
+              <TextField label="Path" value={path} onChange={(e) => setPath(e.target.value)} size="small" />
+
+              <TextField label="Request Body" multiline minRows={6} value={body} onChange={(e) => setBody(e.target.value)} size="small" />
+
+              <Button variant="contained" onClick={handleTest}>Test</Button>
+
+              <Box>
+                <Typography>Latency {latency ? `${latency} ms` : '—'}</Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="subtitle2">Response</Typography>
+                <Box component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', maxHeight: 240, overflow: 'auto', m: 0 }}>{response}</Box>
+              </Box>
+            </Box>
+          </Paper>
+        </Grid>
+      </Grid>
+    </Container>
   );
 }

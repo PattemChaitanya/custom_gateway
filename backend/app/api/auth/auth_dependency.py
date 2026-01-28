@@ -33,25 +33,12 @@ def require_role(role: str):
     """
 
     async def _checker(current_user: dict = Depends(get_current_user)):
-        # current_user has keys: email, roles (comma-separated lowercase), is_superuser
+        # current_user has keys: email, roles (comma-separated), is_superuser
         if current_user.get('is_superuser'):
             return current_user
-        roles_claim = (current_user.get('roles') or '')
-        user_roles = {r.strip().lower() for r in roles_claim.split(',') if r.strip()}
-
-        # Role hierarchy: admin > editor > viewer
-        hierarchy = {
-            'viewer': {'viewer'},
-            'editor': {'editor', 'viewer'},
-            'admin': {'admin', 'editor', 'viewer'},
-        }
-
-        allowed = hierarchy.get(role.lower())
-        if allowed is None:
-            # unknown role requested; deny
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-
-        if user_roles & allowed:
+        roles_claim = current_user.get('roles') or ''
+        user_roles = [r.strip() for r in roles_claim.split(',') if r.strip()]
+        if role in user_roles:
             return current_user
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
