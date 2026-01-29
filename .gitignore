@@ -6,3 +6,4 @@ dist/
 *.txt
 *-lock.json
 .DS_Store
+*.db
