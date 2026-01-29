@@ -5,6 +5,13 @@ export interface APIItem {
   name: string;
   version: string;
   description?: string;
+  // optional UI fields to carry the API config and metadata
+  type?: 'rest' | 'graphql';
+  format?: 'resource' | 'json' | 'terraform';
+  createdAt?: string;
+  updatedAt?: string;
+  // stored configuration body (JSON/YAML/terraform) - backend may accept string or object
+  config?: any;
 }
 
 export async function listAPIs(): Promise<APIItem[]> {

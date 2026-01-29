@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Dict, Optional
 
 
@@ -8,7 +8,11 @@ class APIMeta(BaseModel):
     version: str
     description: Optional[str] = None
     owner_id: Optional[int] = None
+    type: Optional[str] = None
+    resource: Optional[Dict[str, Any]] = None
     config: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = Field(None, alias="createdAt")
+    updated_at: Optional[str] = Field(None, alias="updatedAt")
 
     # Pydantic v2 configuration to allow creating models from ORM objects
     model_config = {"from_attributes": True}
@@ -19,7 +23,11 @@ class CreateAPIRequest(BaseModel):
     version: str
     description: Optional[str] = None
     owner_id: Optional[int] = None
+    type: Optional[str] = None
+    resource: Optional[Dict[str, Any]] = None
     config: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = Field(None, alias="createdAt")
+    updated_at: Optional[str] = Field(None, alias="updatedAt")
 
 
 class UpdateAPIRequest(BaseModel):
@@ -27,5 +35,9 @@ class UpdateAPIRequest(BaseModel):
     version: Optional[str] = None
     description: Optional[str] = None
     owner_id: Optional[int] = None
+    type: Optional[str] = None
+    resource: Optional[Dict[str, Any]] = None
     config: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = Field(None, alias="createdAt")
+    updated_at: Optional[str] = Field(None, alias="updatedAt")
 

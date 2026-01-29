@@ -58,6 +58,10 @@ class API(Base):
     description = Column(Text, nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     # canonical configuration for the API (paths, defaults, etc.)
+    # optional API type (rest/graphql) stored as a simple string for quick queries
+    type = Column(String, nullable=True)
+    # resource column can store structured resource metadata (JSON)
+    resource = Column(JSON, nullable=True)
     config = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

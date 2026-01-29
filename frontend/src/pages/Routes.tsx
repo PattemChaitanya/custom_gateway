@@ -72,6 +72,7 @@ export default function Routes() {
     (async () => {
       try {
         const res = await listAPIs();
+        console.log('fetched APIs', res);
         if (!mounted) return;
         // normalize the API response to RouteRow[] so the state type matches
         let rows: RouteRow[];
@@ -101,7 +102,7 @@ export default function Routes() {
     return () => {
       mounted = false;
     };
-  }, [id]);
+  }, []);
 
   // live-validate canonical whenever it changes
   useEffect(() => {
@@ -123,7 +124,8 @@ export default function Routes() {
   };
 
   const handleEdit = (r: RouteRow, index: number) => {
-    const apiId = id || 'MyAPI';
+    console.log(index, "index", r)
+    const apiId = index || 'MyAPI';
     // encode resource so it can be safely used in the URL
     // const resourceKey = encodeURIComponent(r.resource.replace(/\//g, '_'));
     navigate(`/apis/${apiId}/edit`, { state: { row: r, index } });

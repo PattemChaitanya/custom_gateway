@@ -35,6 +35,8 @@ def upgrade() -> None:
         sa.Column('version', sa.String(), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('owner_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
+        sa.Column('type', sa.String(), nullable=True),
+        sa.Column('resource', sa.JSON(), nullable=True),
         sa.Column('config', sa.JSON(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),

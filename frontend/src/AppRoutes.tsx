@@ -5,7 +5,7 @@ import ResetPassword from "./pages/ResetPassword";
 import VerifyOtp from "./pages/VerifyOtp";
 import Dashboard from "./pages/Dashboard";
 // import APIs from "./pages/APIs";
-// import APIDetail from "./pages/APIDetail";
+import APIDetail from "./pages/APIDetail";
 import RoutesPage from "./pages/Routes";
 import CreateAPI from "./pages/CreateAPI";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -22,9 +22,9 @@ export default function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/apis" element={<RoutesPage />} />
-        {/* <Route path="/apis/:id" element={<APIDetail />} /> */}
         <Route path="/apis/create" element={<CreateAPI />} />
         <Route path="/apis/:id/edit" element={<CreateAPI />} />
+        <Route path="/apis/:id" element={<APIDetail />} />
         {/* <Route path="/apis/:id/routes" element={<RoutesPage />} /> */}
       </Route>
     </Routes>
