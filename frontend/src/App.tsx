@@ -1,34 +1,36 @@
-import { useState } from "react";
-// import reactLogo from './assets/react.svg'
-// import viteLogo from "./assets/vite.svg";
+import { BrowserRouter } from "react-router-dom";
 import "./App.css";
+import useAuthStore from "./hooks/useAuth";
+import AppRoutes from "./AppRoutes";
+import { useEffect } from "react";
+import { me } from "./services/auth";
 
 function App() {
-  const [count, setCount] = useState(0);
+  const setProfile = useAuthStore((s) => s.setProfile);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const js = await me();
+        if (mounted) setProfile(js);
+      } catch (_) {
+        // ignore - user remains unauthenticated
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [setProfile]);
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={""} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={""} className="logo react" alt="React logo" />
-        </a>
+    <BrowserRouter>
+      <div id="root">
+        <main>
+          <AppRoutes />
+        </main>
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    </BrowserRouter>
   );
 }
 

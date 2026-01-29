@@ -1,0 +1,13 @@
+.home-hero{padding:48px 0;background:linear-gradient(180deg,#fff,#f7fbff)}
+.hero-grid{display:flex;gap:32px;align-items:center}
+.hero-left{flex:1}
+.hero-title{font-weight:700;color:#0b2b5b}
+.hero-title .accent{color:#4b6bff}
+.hero-sub{color:#5f6d7a;margin-top:16px}
+.hero-right{flex:1;display:flex;justify-content:center}
+.device-mock{width:520px;height:320px;background:linear-gradient(180deg,#e9f0ff,#ffffff);border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(75,107,255,0.12)}
+.device-screen{background:#fff;border-radius:8px;height:220px;padding:12px;overflow:hidden}
+.list{display:flex;flex-direction:column;gap:8px}
+.row{display:flex;justify-content:space-between;align-items:center}
+.pill{background:#eef2ff;padding:6px 10px;border-radius:6px;color:#2a3b9a}
+.method{font-weight:700;color:#6b7280}
