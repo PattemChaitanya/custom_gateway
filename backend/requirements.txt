@@ -23,3 +23,5 @@ email-validator==2.0.0
 aiosqlite==0.20.0
 greenlet==3.2.4
 starlette==0.35.1
+psycopg2-binary==2.9.11
+boto3==1.42.39

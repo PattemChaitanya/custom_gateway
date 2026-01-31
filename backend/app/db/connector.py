@@ -1,87 +1,220 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from .progress_sql import DATABASE_URL, SQL_ECHO, build_aws_database_url
+"""
+Database Connector - Backward Compatibility Layer
+
+This module provides backward-compatible functions that use the new DatabaseManager
+internally. It maintains the existing API for legacy code while leveraging the
+improved connection management.
+
+For new code, prefer using db_manager.get_db_manager() and db_manager.get_db() directly.
+"""
+
+import logging
+import os
+from typing import AsyncGenerator, Union
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .db_manager import DatabaseManager, get_db_manager, get_db
 from .inmemory import InMemoryDB
-import typing as t
+from .progress_sql import SQL_ECHO
+
+logger = logging.getLogger(__name__)
+
+# Legacy module-level variables for backward compatibility
+# These are maintained for existing code that may access them directly
+engine = None
+AsyncSessionLocal = None
+is_inmemory = False
+inmemory_db = None
+
+
+def _sync_module_state():
+    """Synchronize module-level variables with DatabaseManager state."""
+    global engine, AsyncSessionLocal, is_inmemory, inmemory_db
+    
+    manager = get_db_manager()
+    engine = manager.engine
+    AsyncSessionLocal = manager.session_factory
+    is_inmemory = not manager.is_using_primary
+    inmemory_db = manager.inmemory_db
 
 
 async def init_db():
-    # import here to avoid circular imports
-    from .models import Base
-    # Only run create_all when using an actual SQL engine
-    if not is_inmemory:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    """
+    Initialize database tables (backward compatibility).
+    
+    This function is maintained for backward compatibility. It ensures
+    database tables are created when using PostgreSQL.
+    """
+    manager = get_db_manager()
+    
+    if manager.is_using_primary and manager.engine:
+        from .models import Base
+        try:
+            async with manager.engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize database tables: {e}", exc_info=True)
+            raise
+    else:
+        logger.info("Skipping table creation (using in-memory database)")
 
 
-# Global flags and objects. If DATABASE_URL is None, we'll use the in-memory
-# fallback to avoid requiring a local sqlite file here.
-is_inmemory = DATABASE_URL is None
-inmemory_db: InMemoryDB | None = InMemoryDB() if is_inmemory else None
-
-# Module-level engine and sessionmaker used by the application when a DB URL is
-# present.
-if not is_inmemory:
-    engine = create_async_engine(DATABASE_URL, echo=SQL_ECHO, future=True)
-
-    AsyncSessionLocal = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
+def init_engine_from_url(url: str, echo: bool = SQL_ECHO):
+    """
+    Initialize database from explicit URL (backward compatibility).
+    
+    Note: This function is synchronous but triggers async initialization internally.
+    For new code, prefer using DatabaseManager directly with async/await.
+    
+    Args:
+        url: Database connection URL
+        echo: Whether to echo SQL statements
+    """
+    logger.warning(
+        "init_engine_from_url is deprecated. Use DatabaseManager.initialize() instead."
     )
-else:
-    engine = None
-    AsyncSessionLocal = None
+    
+    # Set DATABASE_URL in environment for DatabaseManager to pick up
+    os.environ["DATABASE_URL"] = url
+    
+    # Re-initialize the database manager
+    manager = get_db_manager()
+    import asyncio
+    try:
+        asyncio.create_task(manager.reinitialize())
+    except RuntimeError:
+        # If no event loop is running, we can't initialize async
+        logger.warning("Cannot initialize async engine synchronously")
+    
+    _sync_module_state()
+
+
+def init_engine_from_aws_env():
+    """
+    Initialize database from AWS environment variables (backward compatibility).
+    
+    This function attempts to initialize the database connection using AWS_*
+    environment variables. If AWS variables are not configured, it raises
+    RuntimeError to maintain backward compatibility with existing error handling.
+    
+    Raises:
+        RuntimeError: If AWS database environment variables are not set or
+                     connection cannot be established
+    """
+    from .progress_sql import build_aws_database_url
+    
+    url = build_aws_database_url()
+    if not url:
+        raise RuntimeError("AWS database environment variables are not set")
+    
+    # Set the URL and reinitialize
+    os.environ["DATABASE_URL"] = url
+    
+    manager = get_db_manager()
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If loop is already running, schedule the initialization
+            asyncio.create_task(manager.reinitialize())
+        else:
+            # If no loop is running, run it synchronously
+            loop.run_until_complete(manager.reinitialize())
+    except RuntimeError as e:
+        logger.error(f"Failed to initialize from AWS environment: {e}")
+        raise RuntimeError("AWS database is not reachable from this host")
+    
+    _sync_module_state()
+    
+    if not manager.is_using_primary:
+        raise RuntimeError("Failed to connect to AWS database")
 
 
 def create_engine_from_url(url: str, echo: bool = SQL_ECHO):
-    """Create and return an async SQLAlchemy engine for the given URL.
-
-    Returns: (engine, sessionmaker)
     """
-    eng = create_async_engine(url, echo=echo, future=True)
+    Create engine from URL (backward compatibility).
+    
+    Args:
+        url: Database connection URL
+        echo: Whether to echo SQL statements
+        
+    Returns:
+        tuple: (engine, sessionmaker) - legacy return format
+        
+    Note: This is a synchronous wrapper that may not work in all contexts.
+    Prefer using DatabaseManager directly for new code.
+    """
+    logger.warning(
+        "create_engine_from_url is deprecated. "
+        "Use DatabaseManager for connection management."
+    )
+    
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.orm import sessionmaker
+    import ssl
+    
+    # Build connect args
+    connect_args = {}
+    sslroot = os.getenv("AWS_SSLROOTCERT")
+    if sslroot and os.path.exists(sslroot):
+        try:
+            ssl_context = ssl.create_default_context(cafile=sslroot)
+            ssl_context.check_hostname = True
+            connect_args["ssl"] = ssl_context
+        except Exception:
+            pass
+    
+    # Create engine
+    if connect_args:
+        eng = create_async_engine(url, echo=echo, future=True, connect_args=connect_args)
+    else:
+        eng = create_async_engine(url, echo=echo, future=True)
+    
     sess = sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
+    
     return eng, sess
 
 
 def create_engine_from_aws_env():
-    """Build a DB URL from AWS_* env vars and return (engine, sessionmaker).
-
-    Raises RuntimeError if required AWS env vars are missing.
     """
+    Create engine from AWS environment variables (backward compatibility).
+    
+    Returns:
+        tuple: (engine, sessionmaker) - legacy return format
+        
+    Raises:
+        RuntimeError: If AWS configuration is missing or connection fails
+    """
+    from .progress_sql import build_aws_database_url, validate_postgres_sync
+    
     url = build_aws_database_url()
     if not url:
         raise RuntimeError("AWS database environment variables are not set")
+    
+    # Validate connection
+    sync_url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    if not validate_postgres_sync(sync_url):
+        raise RuntimeError("AWS database is not reachable from this host")
+    
     return create_engine_from_url(url)
 
 
-def init_engine_from_url(url: str, echo: bool = SQL_ECHO):
-    """Initialize module-level engine and AsyncSessionLocal from an explicit URL."""
-    global engine, AsyncSessionLocal, is_inmemory, inmemory_db
-    is_inmemory = False
-    inmemory_db = None
-    engine, AsyncSessionLocal = create_engine_from_url(url, echo=echo)
+# Export the main dependency function from db_manager
+# This is the primary function that should be used with FastAPI Depends()
+__all__ = [
+    'get_db',
+    'init_db',
+    'init_engine_from_url',
+    'init_engine_from_aws_env',
+    'create_engine_from_url',
+    'create_engine_from_aws_env',
+    'engine',
+    'AsyncSessionLocal',
+    'is_inmemory',
+    'inmemory_db',
+]
 
 
-def init_engine_from_aws_env():
-    """Initialize module-level engine and AsyncSessionLocal from AWS env vars.
-
-    Raises RuntimeError if AWS env vars are not present.
-    """
-    global engine, AsyncSessionLocal, is_inmemory, inmemory_db
-    eng, sess = create_engine_from_aws_env()
-    engine = eng
-    AsyncSessionLocal = sess
-    is_inmemory = False
-    inmemory_db = None
-
-
-async def get_db():
-    """Yield either an AsyncSession (when using SQL) or an InMemoryDB instance.
-
-    The router and CRUD layers should accept either and branch accordingly.
-    """
-    if is_inmemory:
-        # In-memory DB object used directly by CRUD functions
-        yield inmemory_db
-    else:
-        async with AsyncSessionLocal() as session:
-            yield session
+# Initialize module state on import
+_sync_module_state()
