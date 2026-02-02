@@ -15,7 +15,7 @@ from getpass import getpass
 try:
     import psycopg2
     from psycopg2 import OperationalError
-except Exception as e:
+except Exception:
     print("psycopg2 is not installed. Install it in your environment and try again.")
     print("pip install psycopg2-binary")
     raise

@@ -2,7 +2,8 @@
 Compatibility shim for API schemas. The canonical API schemas now live in
 `app.api.apis.schemas`. Importing from here forwards to that module.
 """
-
+from typing import Optional, Dict, Any
+from pydantic import BaseModel
 from .apis.schemas import *  # noqa: F401,F403
 
 

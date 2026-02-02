@@ -14,7 +14,6 @@ from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
-import asyncio
 
 from .progress_sql import (
     build_aws_database_url,

@@ -4,6 +4,8 @@ import pytest
 from pathlib import Path
 from urllib.parse import urlparse
 from dotenv import load_dotenv
+from passlib.context import CryptContext
+from datetime import datetime, timezone
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,9 +19,6 @@ try:
     import psycopg2
 except Exception:
     psycopg2 = None
-
-from passlib.context import CryptContext
-from datetime import datetime, timezone
 
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")

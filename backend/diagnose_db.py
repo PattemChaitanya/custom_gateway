@@ -48,7 +48,7 @@ def check_url_building():
     # Try building AWS URL
     aws_url = build_aws_database_url()
     if aws_url:
-        print(f"✓ AWS URL built successfully")
+        print("✓ AWS URL built successfully")
         # Mask password in output
         masked_url = aws_url
         if "@" in masked_url:
@@ -73,9 +73,9 @@ def check_url_building():
     # Try getting URL from environment (all methods)
     env_url = get_database_url_from_env()
     if env_url:
-        print(f"\n✓ Database URL resolved from environment")
+        print("\n✓ Database URL resolved from environment")
     else:
-        print(f"\n✗ No database URL could be resolved")
+        print("\n✗ No database URL could be resolved")
     
     return aws_url or env_url
 
@@ -91,13 +91,13 @@ def check_connection(url):
         return False
     
     # Check if psycopg2 is available
-    try:
-        import psycopg2
-        print("✓ psycopg2 is available for validation")
-    except ImportError:
+    import importlib.util
+    if importlib.util.find_spec("psycopg2") is None:
         print("✗ psycopg2 not available - cannot validate connection")
         print("  Install with: pip install psycopg2-binary")
         return False
+    
+    print("✓ psycopg2 is available for validation")
     
     # Try to validate connection
     print("\nAttempting connection validation...")

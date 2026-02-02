@@ -40,7 +40,7 @@ async def test_tunnel_connection():
         info = db_manager.get_connection_info()
         health = await db_manager.health_check()
         
-        print(f"\n📊 Connection Status:")
+        print("\n📊 Connection Status:")
         print(f"  Database Type: {info['database_type']}")
         print(f"  Using Primary: {info['is_using_primary']}")
         print(f"  Health: {health['status']}")
