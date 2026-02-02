@@ -1,4 +1,3 @@
-import asyncio
 from app.db import models
 from app.api.apis import schemas
 

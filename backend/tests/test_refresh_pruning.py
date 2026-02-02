@@ -29,7 +29,7 @@ def test_refresh_token_pruning(monkeypatch):
             if not user:
                 return 0
             q = await session.execute(
-                select(RefreshToken).where(RefreshToken.revoked == False).where(RefreshToken.user_id == user.id)
+                select(RefreshToken).where(not RefreshToken.revoked).where(RefreshToken.user_id == user.id)
             )
             return len(q.scalars().all())
 

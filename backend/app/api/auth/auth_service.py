@@ -64,7 +64,7 @@ async def _store_code_db(email: str, code: str, session: AsyncSession, transport
     expires_at = now + timedelta(minutes=ttl_minutes)
     # mark previous unconsumed codes consumed
     q_existing = await session.execute(
-        select(OTP).where(OTP.email == email).where(OTP.consumed == False).where(OTP.transport == transport).order_by(OTP.created_at.desc())
+        select(OTP).where(OTP.email == email).where(not OTP.consumed).where(OTP.transport == transport).order_by(OTP.created_at.desc())
     )
     existing = q_existing.scalars().first()
     if existing:
@@ -123,7 +123,7 @@ async def _create_code(email: str, session: AsyncSession, transport: str, global
 async def _verify_code_db(email: str, code: str, session: AsyncSession, transport: str, max_attempts: int):
     now = datetime.now(timezone.utc)
     q = await session.execute(
-        select(OTP).where(OTP.email == email).where(OTP.transport == transport).where(OTP.consumed == False).order_by(OTP.created_at.desc())
+        select(OTP).where(OTP.email == email).where(OTP.transport == transport).where(not OTP.consumed).order_by(OTP.created_at.desc())
     )
     entry = q.scalars().first()
     if not entry:
@@ -294,7 +294,7 @@ async def login_user(email: str, password: str, session: AsyncSession):
         q_active = await session.execute(
             select(RefreshToken)
             .where(RefreshToken.user_id == user.id)
-            .where(RefreshToken.revoked == False)
+            .where(not RefreshToken.revoked)
             .order_by(RefreshToken.created_at.asc())
         )
         active_tokens = q_active.scalars().all()
@@ -407,7 +407,7 @@ async def refresh_tokens(refresh_token: str, session: AsyncSession):
             select(RefreshToken)
             .where(
                 RefreshToken.user_id == rt.user_id,
-                RefreshToken.revoked == False,
+                not RefreshToken.revoked,
             )
             .order_by(RefreshToken.created_at.asc())
         )
@@ -591,7 +591,7 @@ async def verify_email(email: str, code: str, session: AsyncSession):
         if email in _EMAIL_VERIFIED:
             return {"error": "already_verified"}
 
-        now = datetime.now(timezone.utc)
+        # now = datetime.now(timezone.utc) Will use in DB check later.
         # first, attempt DB-backed lookup
         try:
             res = await _verify_code_db(email, code, session, transport='email', max_attempts=OTP_MAX_ATTEMPTS)

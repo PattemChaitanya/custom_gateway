@@ -9,8 +9,6 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
-from app.db.models import RefreshToken, Base
-
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
 
@@ -20,7 +18,7 @@ async def cleanup():
     AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with AsyncSessionLocal() as session:
         now = datetime.now(timezone.utc)
-        q = await session.execute(
+        await session.execute(
             "DELETE FROM refresh_tokens WHERE revoked = 1 OR expires_at < :now RETURNING id",
             {"now": now},
         )
