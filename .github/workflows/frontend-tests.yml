@@ -3,10 +3,10 @@ name: Frontend Tests
 on:
   push:
     paths:
-      - 'frontend/**'
+      - "frontend/**"
   pull_request:
     paths:
-      - 'frontend/**'
+      - "frontend/**"
 
 jobs:
   test-frontend:
@@ -16,7 +16,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: "18"
       - name: Cache node modules
         uses: actions/cache@v4
         with:
@@ -27,4 +27,4 @@ jobs:
         run: npm ci
       - name: Run frontend tests
         working-directory: frontend
-        run: npm test -- --ci --reporters=default
+        run: npm run test:ci -- --ci --reporters=default

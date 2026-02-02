@@ -2,35 +2,36 @@
 Compatibility shim for API schemas. The canonical API schemas now live in
 `app.api.apis.schemas`. Importing from here forwards to that module.
 """
-
+from typing import Optional, Dict, Any
+from pydantic import BaseModel
 from .apis.schemas import *  # noqa: F401,F403
 
 
 
 class SchemaModel(BaseModel):
-    id: Optional[int]
+    id: int | None = None
     api_id: int
     name: str
-    definition: Optional[Dict[str, Any]] = None
-    raw: Optional[str] = None
+    definition: Optional[Dict[str, Any]] | None = None
+    raw: Optional[str] | None = None
 
     class Config:
         orm_mode = True
 
 
 class AuthPolicyModel(BaseModel):
-    id: Optional[int]
+    id: int | None = None
     api_id: int
     name: str
     type: str
-    config: Optional[Dict[str, Any]] = None
+    config: Optional[Dict[str, Any]] | None = None
 
     class Config:
         orm_mode = True
 
 
 class RateLimitModel(BaseModel):
-    id: Optional[int]
+    id: int | None = None
     api_id: int
     name: str
     key_type: str
@@ -42,44 +43,44 @@ class RateLimitModel(BaseModel):
 
 
 class ConnectorModel(BaseModel):
-    id: Optional[int]
-    api_id: Optional[int]
+    id: int | None = None
+    api_id: Optional[int] | None = None
     name: str
     type: str
-    config: Optional[Dict[str, Any]] = None
+    config: Optional[Dict[str, Any]] | None = None
 
     class Config:
         orm_mode = True
 
 
 class EnvironmentModel(BaseModel):
-    id: Optional[int]
+    id: int | None = None
     name: str
     slug: str
-    description: Optional[str] = None
+    description: Optional[str] | None = None
 
     class Config:
         orm_mode = True
 
 
 class APIKeyModel(BaseModel):
-    id: Optional[int]
+    id: int | None = None
     key: str
-    label: Optional[str] = None
-    scopes: Optional[str] = None
-    revoked: Optional[bool] = False
-    environment_id: Optional[int] = None
+    label: Optional[str] | None= None
+    scopes: Optional[str] | None = None
+    revoked: Optional[bool] | None = False
+    environment_id: Optional[int] | None = None
 
     class Config:
         orm_mode = True
 
 
 class ModuleMetadataModel(BaseModel):
-    id: Optional[int]
+    id: int | None = None
     name: str
-    version: Optional[str] = None
-    description: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    version: Optional[str] | None = None
+    description: Optional[str] | None = None
+    metadata: Optional[Dict[str, Any]] | None = None
 
     class Config:
         orm_mode = True

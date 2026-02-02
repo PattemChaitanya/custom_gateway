@@ -27,7 +27,7 @@ def test_admin_set_and_get_roles():
     assert r.status_code == 200
     # create a client to call admin endpoints (we're not setting auth headers here)
     client = get_client()
-    res = client.post(f"/auth/users/admin@example.com/roles", json={"roles": "admin"})
+    res = client.post("/auth/users/admin@example.com/roles", json={"roles": "admin"})
     assert res.status_code in (200, 400, 401, 403)
 
 

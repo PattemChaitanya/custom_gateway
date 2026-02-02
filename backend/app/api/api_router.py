@@ -4,5 +4,4 @@ Legacy compatibility shim. The API router implementation has moved to
 imports keep working during the transition.
 """
 
-from .apis.router import router  # re-export
 

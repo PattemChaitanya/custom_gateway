@@ -76,8 +76,7 @@ async def admin_area(current_user: dict = Depends(require_role('admin'))):
 @router.post("/login")
 async def login_route(payload: UserLogin, response: Response, session: AsyncSession = Depends(get_db)):
     # login_user returns {'access_token': ..., 'refresh_token': ...}
-    data = await login_user(payload.email, payload.password, session);
-    print(payload, "--->", data.get("access_token"))
+    data = await login_user(payload.email, payload.password, session)
     # if login failed, return directly
     if data.get("error"):
         return data

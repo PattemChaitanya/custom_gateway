@@ -1,4 +1,3 @@
-import os
 from urllib.parse import quote_plus
 
 from app.db.progress_sql import build_aws_database_url

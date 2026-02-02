@@ -8,7 +8,7 @@ from app.api.auth import auth_router
 from app.api.apis import router as apis_router
 from .logging_config import configure_logging, get_logger
 from app.middleware.request_logging import register_request_logging
-from app.db.connector import init_engine_from_aws_env, init_db
+from app.db import get_db_manager
 
 # structured logging
 configure_logging(level="INFO")
@@ -17,25 +17,47 @@ logger.info("Server starting")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan handler: initialize DB from AWS env vars (optional) and create tables.
-
-    Falls back silently if AWS env vars are not present.
     """
+    Lifespan handler: initialize database connections and cleanup on shutdown.
+    
+    The DatabaseManager will attempt to connect to AWS PostgreSQL first,
+    and automatically fall back to in-memory storage if that fails.
+    """
+    # Initialize database manager
+    db_manager = get_db_manager()
+    
     try:
-        init_engine_from_aws_env()
-        # If AWS env vars are present, reinitialize engine from them before creating tables
-        await init_db()
-        logger.info("Database initialized from AWS env vars (lifespan)")
-    except RuntimeError as e:
-        logger.info("Skipping AWS engine init (lifespan): %s", str(e))
-        # Even when AWS env vars are missing, ensure local DB tables exist (create_all)
-        try:
-            await init_db()
-            logger.info("Database initialized (lifespan) via metadata.create_all")
-        except Exception as ee:
-            logger.warning("Failed to initialize DB in lifespan: %s", str(ee))
-
+        # Determine echo_sql from environment
+        import os
+        echo_sql = os.getenv("SQL_ECHO", "False").lower() in ("1", "true", "yes")
+        
+        # Initialize database connections (Primary: AWS PostgreSQL, Fallback: In-memory)
+        await db_manager.initialize(echo_sql=echo_sql)
+        
+        # Log connection status
+        conn_info = db_manager.get_connection_info()
+        logger.info(
+            f"Database initialized: {conn_info['database_type']} "
+            f"(primary={conn_info['is_using_primary']})"
+        )
+        
+        # Perform health check
+        health = await db_manager.health_check()
+        logger.info(f"Database health: {health['status']} - {health['message']}")
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}", exc_info=True)
+        logger.warning("Application will use in-memory fallback")
+    
     yield
+    
+    # Cleanup on shutdown
+    logger.info("Shutting down application")
+    try:
+        await db_manager.shutdown()
+        logger.info("Database connections closed gracefully")
+    except Exception as e:
+        logger.error(f"Error during database shutdown: {e}", exc_info=True)
 
 
 app = FastAPI(
@@ -92,6 +114,31 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def root():
     logger.info("Root endpoint called")
     return {"message": "Welcome to the Gateway Management API"}
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint that includes database connection status.
+    
+    Returns:
+        dict: Health status including database connection information
+    """
+    db_manager = get_db_manager()
+    db_health = await db_manager.health_check()
+    conn_info = db_manager.get_connection_info()
+    
+    return {
+        "status": "healthy",
+        "service": "Gateway Management API",
+        "version": "1.0.0",
+        "database": {
+            "status": db_health["status"],
+            "type": db_health["database"],
+            "message": db_health["message"],
+            "using_primary": conn_info["is_using_primary"],
+        }
+    }
 
 
 # lifespan handler replaces on_event startup to avoid deprecation warnings
