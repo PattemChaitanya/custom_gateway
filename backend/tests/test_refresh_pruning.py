@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-from app.main import app
 from app.api.auth import auth_service
 from app.db import get_db_manager
 from app.db.models import RefreshToken, User
@@ -9,11 +8,14 @@ import asyncio
 import pytest
 
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    from app.main import app
+    return TestClient(app)
 
 
 @pytest.mark.skip(reason="Token pruning test needs InMemoryDB query improvements")
-def test_refresh_token_pruning(monkeypatch):
+def test_refresh_token_pruning(client, monkeypatch):
     # reduce limit for testability
     monkeypatch.setattr(auth_service, "MAX_REFRESH_TOKENS_PER_USER", 3)
 

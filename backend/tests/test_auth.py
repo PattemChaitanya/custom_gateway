@@ -1,16 +1,20 @@
 from fastapi.testclient import TestClient
-from app.main import app
-
-client = TestClient(app)
+import pytest
 
 
-def test_root_info():
+@pytest.fixture
+def client():
+    from app.main import app
+    return TestClient(app)
+
+
+def test_root_info(client):
     resp = client.get("/auth/")
     assert resp.status_code == 200
     assert resp.json() == {"Auth": "This is the Auth endpoint"}
 
 
-def test_register_and_login_and_me():
+def test_register_and_login_and_me(client):
     # register
     payload = {"email": "alice@example.com", "password": "secret"}
     r = client.post("/auth/register", json=payload)
@@ -34,7 +38,7 @@ def test_register_and_login_and_me():
     assert data.get("email") == "alice@example.com"
 
 
-def test_refresh_and_reset_and_verify():
+def test_refresh_and_reset_and_verify(client):
     # refresh - use the refresh token from login
     login = client.post("/auth/login", json={"email": "charlie@example.com", "password": "pwd"})
     # register and login a user to get a refresh token

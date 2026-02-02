@@ -1,14 +1,17 @@
 from fastapi.testclient import TestClient
-from app.main import app
+import pytest
 from time import sleep
 
 from app.api.auth import auth_service
 
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    from app.main import app
+    return TestClient(app)
 
 
-def test_expired_refresh_token(monkeypatch):
+def test_expired_refresh_token(client, monkeypatch):
     # shorten refresh expiry to 1 second for this test
     monkeypatch.setattr(auth_service, "REFRESH_TOKEN_EXPIRE_SECONDS", 1)
 

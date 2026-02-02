@@ -1,10 +1,14 @@
 from fastapi.testclient import TestClient
-from app.main import app
-
-client = TestClient(app)
+import pytest
 
 
-def test_send_and_verify_mobile_otp():
+@pytest.fixture
+def client():
+    from app.main import app
+    return TestClient(app)
+
+
+def test_send_and_verify_mobile_otp(client):
     mobile = "+15550001111"
     # send OTP to mobile via unified endpoint
     r = client.post("/auth/send-otp", json={"mobile": mobile})
