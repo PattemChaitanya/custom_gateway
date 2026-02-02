@@ -7,3 +7,4 @@ dist/
 *-lock.json
 .DS_Store
 *.db
+coverage
