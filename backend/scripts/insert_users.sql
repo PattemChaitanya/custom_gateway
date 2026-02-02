@@ -1,0 +1,4 @@
+-- Generated INSERT statements for users
+INSERT INTO users (email, hashed_password, is_active, is_superuser, roles, created_at) VALUES ('alice@example.com', '$pbkdf2-sha256$29000$a601hjAmBMA4JwQAAOA8Bw$D.1KRELHdj/nlX9XaaUnqeQVKSMlfAaLG11guKZxNqY', true , false , 'viewer', '2026-02-02T13:44:49.114700+00:00');
+INSERT INTO users (email, hashed_password, is_active, is_superuser, roles, created_at) VALUES ('bob@example.com', '$pbkdf2-sha256$29000$w1jrHUPIGUPIube2lpJyLg$/3WCl00cG665CnZtECxVn/aojQ/CjX6FhC4ipRnuKAI', true , false , 'viewer', '2026-02-02T13:44:49.114700+00:00');
+INSERT INTO users (email, hashed_password, is_active, is_superuser, roles, created_at) VALUES ('admin@example.com', '$pbkdf2-sha256$29000$qBVCyDnHeC8lhBBCKOW89w$Cx8WYfnElwx4fWJRTL3pf8h1VLSzYX0Sp9zhX89MRKg', true , true , 'admin', '2026-02-02T13:44:49.114700+00:00');

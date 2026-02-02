@@ -5,6 +5,7 @@ This script tests the database connection after the tunnel is established.
 import asyncio
 import sys
 import os
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -13,6 +14,7 @@ from app.db import get_db_manager
 from sqlalchemy import text
 
 
+@pytest.mark.asyncio
 async def test_tunnel_connection():
     """Test database connection through the SSH tunnel."""
     print("\n" + "="*70)

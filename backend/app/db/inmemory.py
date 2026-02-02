@@ -12,6 +12,58 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class QueryResult:
+    """Wrapper for query results to mimic SQLAlchemy Result object."""
+    
+    def __init__(self, results: List[Any]):
+        """Initialize query result with list of objects."""
+        self._results = results
+    
+    def scalars(self):
+        """Return scalar results accessor."""
+        return ScalarResult(self._results)
+    
+    def first(self):
+        """Return first result or None."""
+        return self._results[0] if self._results else None
+    
+    def all(self):
+        """Return all results."""
+        return self._results
+
+
+class ScalarResult:
+    """Scalar result accessor to mimic SQLAlchemy ScalarResult."""
+    
+    def __init__(self, results: List[Any]):
+        """Initialize with list of results."""
+        self._results = results
+    
+    def first(self):
+        """Return first result or None."""
+        return self._results[0] if self._results else None
+    
+    def all(self):
+        """Return all results."""
+        return self._results
+    
+    def one(self):
+        """Return single result, raise if multiple or none."""
+        if len(self._results) == 0:
+            raise Exception("No result found")
+        if len(self._results) > 1:
+            raise Exception("Multiple results found")
+        return self._results[0]
+    
+    def one_or_none(self):
+        """Return single result or None."""
+        if len(self._results) == 0:
+            return None
+        if len(self._results) > 1:
+            raise Exception("Multiple results found")
+        return self._results[0]
+
+
 class InMemoryDB:
     """
     Simple in-memory database for fallback when PostgreSQL is unavailable.
@@ -169,14 +221,33 @@ class InMemoryDB:
         """
         pass
     
-    async def add(self, obj: SimpleNamespace) -> None:
+    def add(self, obj: SimpleNamespace) -> None:
         """
-        No-op add for compatibility with SQLAlchemy sessions.
+        Add object to in-memory database.
         
         Args:
-            obj: Object to add (no-op in memory, objects are added via specific methods)
+            obj: Object to add (User, OTP, RefreshToken, etc.)
         """
-        pass
+        # Determine object type and add to appropriate storage
+        obj_type = getattr(obj, '__class__', None)
+        if obj_type:
+            type_name = obj_type.__name__ if hasattr(obj_type, '__name__') else str(obj_type)
+            
+            if 'User' in type_name:
+                if not hasattr(obj, 'id') or obj.id is None:
+                    obj.id = self._next_user_id
+                    self._next_user_id += 1
+                self._users[obj.id] = obj
+            elif 'OTP' in type_name:
+                if not hasattr(obj, 'id') or obj.id is None:
+                    obj.id = self._next_otp_id
+                    self._next_otp_id += 1
+                self._otps[obj.id] = obj
+            elif 'RefreshToken' in type_name:
+                if not hasattr(obj, 'id') or obj.id is None:
+                    obj.id = self._next_token_id
+                    self._next_token_id += 1
+                self._refresh_tokens[obj.id] = obj
     
     async def delete(self, obj: SimpleNamespace) -> None:
         """
@@ -192,18 +263,80 @@ class InMemoryDB:
     
     async def execute(self, statement):
         """
-        Placeholder for execute method to maintain interface compatibility.
+        Execute a SQLAlchemy select statement on in-memory data.
         
         Args:
-            statement: SQL statement (not used in in-memory DB)
+            statement: SQLAlchemy select statement
             
-        Raises:
-            NotImplementedError: This method is not implemented for in-memory DB
+        Returns:
+            QueryResult: Object with scalars() method for result access
         """
-        raise NotImplementedError(
-            "InMemoryDB does not support raw SQL execution. "
-            "Use specific CRUD methods instead."
-        )
+        # Simple implementation to handle basic select queries
+        from app.db.models import User, OTP, RefreshToken
+        import sqlalchemy.sql.elements as sql_elements
+        
+        # Determine which model is being queried
+        if hasattr(statement, '_propagate_attrs') and hasattr(statement, 'column_descriptions'):
+            # SQLAlchemy 2.0 style query
+            try:
+                # Get the entity being queried
+                entities = statement.column_descriptions
+                if entities:
+                    entity_type = entities[0].get('entity', entities[0].get('type'))
+                    
+                    # Query the appropriate storage
+                    if entity_type == User or (hasattr(entity_type, '__name__') and entity_type.__name__ == 'User'):
+                        results = list(self._users.values())
+                    elif entity_type == OTP or (hasattr(entity_type, '__name__') and entity_type.__name__ == 'OTP'):
+                        results = list(self._otps.values())
+                    elif entity_type == RefreshToken or (hasattr(entity_type, '__name__') and entity_type.__name__ == 'RefreshToken'):
+                        results = list(self._refresh_tokens.values())
+                    else:
+                        results = []
+                    
+                    # Apply where clause filtering
+                    if hasattr(statement, '_where_criteria') and statement._where_criteria:
+                        filtered_results = []
+                        for obj in results:
+                            match = True
+                            for criterion in statement._where_criteria:
+                                # Handle different criterion types
+                                try:
+                                    # Handle NOT operator (UnaryExpression)
+                                    if hasattr(criterion, '__class__') and 'UnaryExpression' in criterion.__class__.__name__:
+                                        if hasattr(criterion, 'element'):
+                                            # This is a NOT expression
+                                            inner = criterion.element
+                                            if hasattr(inner, 'key'):
+                                                attr_name = inner.key
+                                                if hasattr(obj, attr_name):
+                                                    # For NOT, we want the opposite of the attribute value
+                                                    if getattr(obj, attr_name):
+                                                        match = False
+                                                        break
+                                    # Handle regular comparison (BinaryExpression)
+                                    elif hasattr(criterion, 'left') and hasattr(criterion, 'right'):
+                                        left_val = criterion.left.key if hasattr(criterion.left, 'key') else str(criterion.left)
+                                        right_val = criterion.right.value if hasattr(criterion.right, 'value') else criterion.right
+                                        
+                                        if hasattr(obj, left_val):
+                                            obj_val = getattr(obj, left_val)
+                                            if obj_val != right_val:
+                                                match = False
+                                                break
+                                except Exception as ex:
+                                    logger.debug(f"Error evaluating criterion: {ex}")
+                                    pass
+                            if match:
+                                filtered_results.append(obj)
+                        results = filtered_results
+                    
+                    return QueryResult(results)
+            except Exception as e:
+                logger.warning(f"Query execution error: {e}")
+                return QueryResult([])
+        
+        return QueryResult([])
     
     # Utility Methods
     
