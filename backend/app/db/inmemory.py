@@ -273,7 +273,6 @@ class InMemoryDB:
         """
         # Simple implementation to handle basic select queries
         from app.db.models import User, OTP, RefreshToken
-        import sqlalchemy.sql.elements as sql_elements
         
         # Determine which model is being queried
         if hasattr(statement, '_propagate_attrs') and hasattr(statement, 'column_descriptions'):
