@@ -4,6 +4,7 @@ import useAuthStore from "./hooks/useAuth";
 import AppRoutes from "./AppRoutes";
 import { useEffect } from "react";
 import { me } from "./services/auth";
+import { ThemeProvider } from "./contexts/ThemeContext";
 
 function App() {
   const setProfile = useAuthStore((s) => s.setProfile);
@@ -24,13 +25,15 @@ function App() {
   }, [setProfile]);
 
   return (
-    <BrowserRouter>
-      <div id="root">
-        <main>
-          <AppRoutes />
-        </main>
-      </div>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <div id="root">
+          <main>
+            <AppRoutes />
+          </main>
+        </div>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }
 

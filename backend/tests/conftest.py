@@ -9,6 +9,9 @@ from pathlib import Path
 # backend project root
 HERE = Path(__file__).parent.parent
 
+# Add backend directory to Python path so 'app' module can be imported
+sys.path.insert(0, str(HERE))
+
 
 def run_alembic_upgrade():
     env = os.environ.copy()

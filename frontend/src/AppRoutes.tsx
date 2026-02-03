@@ -10,6 +10,11 @@ import RoutesPage from "./pages/Routes";
 import CreateAPI from "./pages/CreateAPI";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Home from "./pages/Home";
+import { APIKeys } from "./pages/APIKeys";
+import { Secrets } from "./pages/Secrets";
+import { AuditLogs } from "./pages/AuditLogs";
+import Connectors from "./pages/Connectors";
+import Authorizers from "./pages/Authorizers";
 
 export default function AppRoutes() {
   return (
@@ -25,6 +30,11 @@ export default function AppRoutes() {
         <Route path="/apis/create" element={<CreateAPI />} />
         <Route path="/apis/:id/edit" element={<CreateAPI />} />
         <Route path="/apis/:id" element={<APIDetail />} />
+        <Route path="/api-keys" element={<APIKeys />} />
+        <Route path="/secrets" element={<Secrets />} />
+        <Route path="/audit-logs" element={<AuditLogs />} />
+        <Route path="/connectors" element={<Connectors />} />
+        <Route path="/authorizers" element={<Authorizers />} />
         {/* <Route path="/apis/:id/routes" element={<RoutesPage />} /> */}
       </Route>
     </Routes>

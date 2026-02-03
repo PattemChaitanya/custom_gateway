@@ -75,16 +75,42 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     # Explicitly allow Authorization and common headers used by the frontend.
-    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language", "Content-Language"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language", "Content-Language", "X-API-Key"],
     max_age=600,
 )
 
-# register request logging middleware (redacts Authorization header)
-register_request_logging(app)
+# Register middlewares
+from app.middleware.request_logging import register_request_logging
+from app.validation.middleware import register_validation_middleware
+from app.metrics.middleware import register_metrics_middleware
+from app.rate_limiter.middleware import register_rate_limit_middleware
+from app.authorizers.middleware import register_authorization_middleware
+
+register_request_logging(app)  # Request logging with header redaction
+register_validation_middleware(app, max_body_size=10*1024*1024)  # Input validation
+register_metrics_middleware(app)  # Metrics collection
+register_rate_limit_middleware(app, global_limit=1000, global_window=60)  # Rate limiting
+register_authorization_middleware(app)  # Authorization
+
+# Include routers
+from app.api.keys import router as keys_router
+from app.api.connectors import router as connectors_router
+from app.api.authorizers import router as authorizers_router
 
 app.include_router(user.router, prefix="/user", tags=["user"])
 app.include_router(auth_router.router)
 app.include_router(apis_router)
+app.include_router(keys_router)
+app.include_router(connectors_router)
+app.include_router(authorizers_router)
+
+# Metrics endpoint
+from app.metrics.prometheus import metrics_endpoint
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    """Prometheus metrics endpoint."""
+    return metrics_endpoint()
 
 
 # Ensure error responses include CORS headers when raised (some errors can bypass

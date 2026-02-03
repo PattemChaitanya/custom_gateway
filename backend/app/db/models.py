@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, func, JSON, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.ext.hybrid import hybrid_property
 
 # use SQLAlchemy 2.0 compatible declarative_base import
 Base = declarative_base()
@@ -151,6 +152,10 @@ class APIKey(Base):
     revoked = Column(Boolean, default=False)
     environment_id = Column(Integer, ForeignKey("environments.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    usage_count = Column(Integer, default=0)
+    metadata_json = Column(JSON, name="metadata", nullable=True)
 
     environment = relationship("Environment")
 
@@ -165,5 +170,139 @@ class ModuleMetadata(Base):
     # 'metadata' is a reserved attribute on Declarative classes; store JSON here
     metadata_json = Column(JSON, name="metadata", nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Secret(Base):
+    __tablename__ = "secrets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True, index=True)
+    value = Column(Text, nullable=False)  # Encrypted value
+    description = Column(Text, nullable=True)
+    tags = Column(String, nullable=True)  # comma-separated tags
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Hybrid property for test compatibility - works both in Python and SQL
+    @hybrid_property
+    def key(self):
+        """Alias for 'name' attribute for test compatibility."""
+        return self.name
+    
+    @key.expression
+    def key(cls):
+        """SQL expression for key (maps to name column)."""
+        return cls.name
+    
+    @hybrid_property
+    def encrypted_value(self):
+        """Alias for 'value' attribute for test compatibility."""
+        return self.value
+    
+    @encrypted_value.expression
+    def encrypted_value(cls):
+        """SQL expression for encrypted_value (maps to value column)."""
+        return cls.value
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    action = Column(String, nullable=False, index=True)  # CREATE, UPDATE, DELETE, LOGIN, etc.
+    resource_type = Column(String, nullable=True, index=True)  # API, User, Key, etc.
+    resource_id = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    metadata_json = Column(JSON, name="metadata", nullable=True)
+    status = Column(String, nullable=True)  # success, failure
+    error_message = Column(Text, nullable=True)
+
+    user = relationship("User")
+
+
+class Metric(Base):
+    __tablename__ = "metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    metric_type = Column(String, nullable=False, index=True)  # request, latency, error
+    endpoint = Column(String, nullable=True, index=True)
+    method = Column(String, nullable=True)
+    status_code = Column(Integer, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+    api_id = Column(Integer, ForeignKey("apis.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    metadata_json = Column(JSON, name="metadata", nullable=True)
+
+    api = relationship("API")
+    user = relationship("User")
+
+
+class BackendPool(Base):
+    __tablename__ = "backend_pools"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True, index=True)
+    api_id = Column(Integer, ForeignKey("apis.id", ondelete="CASCADE"), nullable=True, index=True)
+    algorithm = Column(String, nullable=False, default='round_robin')  # round_robin, least_connections, weighted
+    backends = Column(JSON, nullable=False)  # List of backend URLs with weights
+    health_check_url = Column(String, nullable=True)
+    health_check_interval = Column(Integer, default=30)  # seconds
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    api = relationship("API")
+
+
+class Permission(Base):
+    __tablename__ = "permissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True, index=True)
+    resource = Column(String, nullable=False, index=True)  # e.g., 'api', 'user', 'key'
+    action = Column(String, nullable=False, index=True)  # e.g., 'create', 'read', 'update', 'delete'
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=True)
+    permissions = Column(JSON, nullable=True)  # List of permission IDs or names
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False, index=True)
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")
+    role = relationship("Role")
+
+
+class ModuleScript(Base):
+    __tablename__ = "module_scripts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    module_id = Column(Integer, ForeignKey("module_metadata.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
+    script_type = Column(String, nullable=False)  # python, javascript, bash, etc.
+    content = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    module = relationship("ModuleMetadata")
 
 
