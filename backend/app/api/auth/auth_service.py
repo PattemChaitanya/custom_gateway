@@ -40,8 +40,10 @@ async def _fetch_user_by_email(session: AsyncSession, email: str):
 
 # Module-level configuration (read once)
 OTP_SALT = os.getenv('OTP_SALT', 'change-this-otp-salt')
-DEV_RETURN_OTP = os.getenv('DEV_RETURN_OTP', 'false').lower() in ('1', 'true', 'yes')
-OTP_RESEND_COOLDOWN_SECONDS = int(os.getenv('OTP_RESEND_COOLDOWN_SECONDS', '60'))
+DEV_RETURN_OTP = os.getenv(
+    'DEV_RETURN_OTP', 'false').lower() in ('1', 'true', 'yes')
+OTP_RESEND_COOLDOWN_SECONDS = int(
+    os.getenv('OTP_RESEND_COOLDOWN_SECONDS', '60'))
 OTP_MAX_ATTEMPTS = int(os.getenv('OTP_MAX_ATTEMPTS', '5'))
 
 # In-memory fallback stores (explicit instead of using globals())
@@ -64,25 +66,30 @@ async def _store_code_db(email: str, code: str, session: AsyncSession, transport
     expires_at = now + timedelta(minutes=ttl_minutes)
     # mark previous unconsumed codes consumed
     q_existing = await session.execute(
-        select(OTP).where(OTP.email == email).where(not OTP.consumed).where(OTP.transport == transport).order_by(OTP.created_at.desc())
+        select(OTP).where(OTP.email == email).where(not OTP.consumed).where(
+            OTP.transport == transport).order_by(OTP.created_at.desc())
     )
     existing = q_existing.scalars().first()
     if existing:
         # Normalize DB timestamps to timezone-aware UTC for comparisons. SQLite
         # may return naive datetimes while Postgres returns tz-aware values.
-        existing_expires = existing.expires_at if existing.expires_at.tzinfo else existing.expires_at.replace(tzinfo=timezone.utc)
-        existing_created = existing.created_at if existing.created_at.tzinfo else existing.created_at.replace(tzinfo=timezone.utc)
+        existing_expires = existing.expires_at if existing.expires_at.tzinfo else existing.expires_at.replace(
+            tzinfo=timezone.utc)
+        existing_created = existing.created_at if existing.created_at.tzinfo else existing.created_at.replace(
+            tzinfo=timezone.utc)
         if existing_expires > now:
             if (now - existing_created).total_seconds() < OTP_RESEND_COOLDOWN_SECONDS:
                 await session.commit()
                 return {"message": f"{transport} code recently sent", "email": email}
 
-    code_hash = hmac.new(OTP_SALT.encode(), code.encode(), hashlib.sha256).hexdigest()
+    code_hash = hmac.new(OTP_SALT.encode(), code.encode(),
+                         hashlib.sha256).hexdigest()
     if existing:
         existing.consumed = True
         session.add(existing)
 
-    new_code = OTP(email=email, otp_hash=code_hash, expires_at=expires_at, attempts=0, consumed=False, transport=transport)
+    new_code = OTP(email=email, otp_hash=code_hash, expires_at=expires_at,
+                   attempts=0, consumed=False, transport=transport)
     session.add(new_code)
     await session.commit()
     return {"message": f"{transport} code sent", "email": email}
@@ -111,7 +118,8 @@ async def _create_code(email: str, session: AsyncSession, transport: str, global
         # DB not available: fallback to in-memory only
         if globals_store is None:
             # nothing to persist to, still return minimal response
-            res = {"message": f"{transport} code sent (in-memory not enabled)", "email": email}
+            res = {
+                "message": f"{transport} code sent (in-memory not enabled)", "email": email}
         else:
             res = _store_code_globals(globals_store, email, code, ttl_minutes)
         if DEV_RETURN_OTP:
@@ -123,19 +131,22 @@ async def _create_code(email: str, session: AsyncSession, transport: str, global
 async def _verify_code_db(email: str, code: str, session: AsyncSession, transport: str, max_attempts: int):
     now = datetime.now(timezone.utc)
     q = await session.execute(
-        select(OTP).where(OTP.email == email).where(OTP.transport == transport).where(not OTP.consumed).order_by(OTP.created_at.desc())
+        select(OTP).where(OTP.email == email).where(OTP.transport == transport).where(
+            not OTP.consumed).order_by(OTP.created_at.desc())
     )
     entry = q.scalars().first()
     if not entry:
         return {"error": "invalid_code"}
     # check expiry
-    entry_expires = entry.expires_at if entry.expires_at.tzinfo else entry.expires_at.replace(tzinfo=timezone.utc)
+    entry_expires = entry.expires_at if entry.expires_at.tzinfo else entry.expires_at.replace(
+        tzinfo=timezone.utc)
     if entry_expires < now:
         entry.consumed = True
         session.add(entry)
         await session.commit()
         return {"error": "expired_code"}
-    code_hash = hmac.new(OTP_SALT.encode(), code.encode(), hashlib.sha256).hexdigest()
+    code_hash = hmac.new(OTP_SALT.encode(), code.encode(),
+                         hashlib.sha256).hexdigest()
     if hmac.compare_digest(code_hash, entry.otp_hash):
         entry.consumed = True
         session.add(entry)
@@ -178,6 +189,7 @@ def _verify_code_globals(globals_key: str, email: str, code: str, canonical: str
 
 # --- End helpers ---------------------------------------------------------
 
+
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 JWT_SECRET = os.getenv("JWT_SECRET", "change-this-secret")
@@ -188,7 +200,8 @@ REFRESH_TOKEN_EXPIRE_SECONDS = 60 * 60 * 24 * 7
 
 def _create_token(email: str, expires_in: int, extra_claims: dict | None = None):
     now = int(time.time())
-    payload = {"sub": email, "iat": now, "exp": now + expires_in, "jti": uuid.uuid4().hex}
+    payload = {"sub": email, "iat": now, "exp": now +
+               expires_in, "jti": uuid.uuid4().hex}
     if extra_claims:
         # avoid overwriting critical claims
         for k, v in extra_claims.items():
@@ -198,7 +211,8 @@ def _create_token(email: str, expires_in: int, extra_claims: dict | None = None)
 
 
 REFRESH_TOKEN_SALT = os.getenv("REFRESH_TOKEN_SALT", "change-this-salt")
-MAX_REFRESH_TOKENS_PER_USER = int(os.getenv("MAX_REFRESH_TOKENS_PER_USER", "5"))
+MAX_REFRESH_TOKENS_PER_USER = int(
+    os.getenv("MAX_REFRESH_TOKENS_PER_USER", "5"))
 
 
 def _hash_jti(jti: str) -> str:
@@ -207,15 +221,67 @@ def _hash_jti(jti: str) -> str:
 
 
 async def register_user(email: str, password: str, session: AsyncSession):
+    from app.db.models import Role, UserRole
+
     existing = await _fetch_user_by_email(session, email)
     if existing:
         return {"error": "user_exists"}
+
+    # Check if this is the first user (will be granted admin role)
+    result = await session.execute(select(User))
+    all_users = result.scalars().all()
+    is_first_user = len(all_users) == 0
+
     hashed = pwd_context.hash(password)
-    # default role for new users when not provided by client
-    user = User(email=email, hashed_password=hashed, roles='viewer')
+
+    # First user gets admin role by default, others get viewer role
+    # Note: Enable GRANT_ADMIN_ON_REGISTER env var to give admin to all new users
+    grant_admin_to_all = os.getenv(
+        "GRANT_ADMIN_ON_REGISTER", "false").lower() in ("1", "true", "yes")
+
+    if is_first_user or grant_admin_to_all:
+        default_role = 'admin'
+        user = User(email=email, hashed_password=hashed,
+                    roles=default_role, is_superuser=True)
+    else:
+        default_role = 'viewer'
+        user = User(email=email, hashed_password=hashed, roles=default_role)
+
     session.add(user)
+
     try:
         await session.commit()
+        await session.refresh(user)
+
+        # Assign role in the user_roles table as well
+        try:
+            # Get the role by name
+            role_result = await session.execute(
+                select(Role).where(Role.name == default_role)
+            )
+            role = role_result.scalar_one_or_none()
+
+            if role:
+                # Assign role to user
+                user_role = UserRole(user_id=user.id, role_id=role.id)
+                session.add(user_role)
+                await session.commit()
+            else:
+                # Role doesn't exist yet, skip assignment (user still has legacy roles field)
+                pass
+
+        except Exception:
+            # If user_roles table doesn't exist or role assignment fails,
+            # continue anyway (user still has legacy roles field)
+            pass
+
+        return {
+            "message": "User registered",
+            "email": email,
+            "role": default_role,
+            "is_first_user": is_first_user
+        }
+
     except Exception as e:
         # fallback behavior for missing DB schema:
         # - if the users table is missing: create all tables via metadata.create_all and retry
@@ -237,10 +303,11 @@ async def register_user(email: str, password: str, session: AsyncSession):
                 # if init_db fails, re-raise original
                 raise
             # retry insert
-            user2 = User(email=email, hashed_password=hashed, roles='viewer')
+            user2 = User(email=email, hashed_password=hashed,
+                         roles=default_role)
             session.add(user2)
             await session.commit()
-            return {"message": "User registered", "email": email}
+            return {"message": "User registered", "email": email, "role": default_role}
 
         # SQLite may report missing column as either "no such column" or
         # "table users has no column named roles"; accept both variants.
@@ -249,22 +316,22 @@ async def register_user(email: str, password: str, session: AsyncSession):
                 # add the missing column and retry
                 await session.execute(text("ALTER TABLE users ADD COLUMN roles VARCHAR"))
                 await session.commit()
-                user2 = User(email=email, hashed_password=hashed, roles='viewer')
+                user2 = User(email=email, hashed_password=hashed,
+                             roles=default_role)
                 session.add(user2)
                 await session.commit()
-                return {"message": "User registered", "email": email}
+                return {"message": "User registered", "email": email, "role": default_role}
             except Exception:
                 # if we still fail, re-raise original
                 raise
 
         # unknown error: re-raise
         raise
-    return {"message": "User registered", "email": email}
 
 
 async def login_user(email: str, password: str, session: AsyncSession):
     user = await _fetch_user_by_email(session, email)
-    
+
     if not user:
         return {"error": "invalid_credentials"}
     if not pwd_context.verify(password, user.hashed_password):
@@ -272,11 +339,14 @@ async def login_user(email: str, password: str, session: AsyncSession):
     # include role claims in the tokens for RBAC checks
     raw_roles = (user.roles or '') if hasattr(user, 'roles') else ''
     # normalize roles to comma-separated, lowercase, no extra spaces
-    roles = ','.join(r.strip().lower() for r in raw_roles.split(',') if r.strip())
+    roles = ','.join(r.strip().lower()
+                     for r in raw_roles.split(',') if r.strip())
     is_super = bool(getattr(user, 'is_superuser', False))
     extra = {"roles": roles, "is_superuser": is_super}
-    access = _create_token(email, ACCESS_TOKEN_EXPIRE_SECONDS, extra_claims=extra)
-    refresh = _create_token(email, REFRESH_TOKEN_EXPIRE_SECONDS, extra_claims=extra)
+    access = _create_token(
+        email, ACCESS_TOKEN_EXPIRE_SECONDS, extra_claims=extra)
+    refresh = _create_token(
+        email, REFRESH_TOKEN_EXPIRE_SECONDS, extra_claims=extra)
     # extract jti from payload to store hashed jti instead of token
     try:
         payload = jwt.decode(refresh, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -285,8 +355,10 @@ async def login_user(email: str, password: str, session: AsyncSession):
         # fallback: generate a jti from uuid if decoding fails
         jti = uuid.uuid4().hex
 
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=REFRESH_TOKEN_EXPIRE_SECONDS)
-    rt = RefreshToken(token=_hash_jti(jti), user_id=user.id, expires_at=expires_at)
+    expires_at = datetime.now(timezone.utc) + \
+        timedelta(seconds=REFRESH_TOKEN_EXPIRE_SECONDS)
+    rt = RefreshToken(token=_hash_jti(
+        jti), user_id=user.id, expires_at=expires_at)
     session.add(rt)
 
     # enforce maximum active refresh tokens per user
@@ -300,7 +372,8 @@ async def login_user(email: str, password: str, session: AsyncSession):
         active_tokens = q_active.scalars().all()
         if len(active_tokens) + 1 > MAX_REFRESH_TOKENS_PER_USER:
             # remove oldest tokens to enforce limit (revoke them)
-            num_to_remove = (len(active_tokens) + 1) - MAX_REFRESH_TOKENS_PER_USER
+            num_to_remove = (len(active_tokens) + 1) - \
+                MAX_REFRESH_TOKENS_PER_USER
             for old in active_tokens[:num_to_remove]:
                 old.revoked = True
                 session.add(old)
@@ -372,7 +445,8 @@ async def refresh_tokens(refresh_token: str, session: AsyncSession):
 
         # preserve claims
         roles = payload.get("roles", "") or ""
-        roles = ",".join(r.strip().lower() for r in roles.split(",") if r.strip())
+        roles = ",".join(r.strip().lower()
+                         for r in roles.split(",") if r.strip())
         is_super = bool(payload.get("is_superuser", False))
         extra = {"roles": roles, "is_superuser": is_super}
 
@@ -442,10 +516,10 @@ async def refresh_tokens(refresh_token: str, session: AsyncSession):
         return {"error": "invalid_token"}
 
 
-
 async def logout_refresh_token(refresh_token: str, session: AsyncSession):
     try:
-        payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(refresh_token, JWT_SECRET,
+                             algorithms=[JWT_ALGORITHM])
         jti = payload.get("jti")
         if not jti:
             return {"error": "invalid_token"}
@@ -473,7 +547,8 @@ async def get_current_user(token: str, session: AsyncSession) -> Optional[dict]:
             return None
         # include role info for RBAC
         roles = (user.roles or '') if hasattr(user, 'roles') else ''
-        roles = ','.join(r.strip().lower() for r in roles.split(',') if r.strip())
+        roles = ','.join(r.strip().lower()
+                         for r in roles.split(',') if r.strip())
         return {"email": user.email, "roles": roles, "is_superuser": bool(getattr(user, 'is_superuser', False))}
     except Exception:
         return None
@@ -496,7 +571,8 @@ async def set_user_roles(email: str, roles: str, session: AsyncSession):
         user = q.scalars().first()
         if not user:
             return {"error": "not_found"}
-        norm = ','.join(r.strip().lower() for r in (roles or '').split(',') if r.strip())
+        norm = ','.join(r.strip().lower()
+                        for r in (roles or '').split(',') if r.strip())
         # SQLAlchemy model may or may not have roles attribute depending on schema; set if present
         try:
             setattr(user, 'roles', norm)
@@ -559,7 +635,8 @@ async def reset_password(email: str):
         reset_path = f"/reset-password?email={email}&token={token}"
         # do not reveal whether the email exists in the system to callers in production,
         # but for development/tests we return the token/path so automated tests can assert on them.
-        print("Sending password reset email to:", email, _PASSWORD_RESET_TOKENS[email], "path=", reset_path)
+        print("Sending password reset email to:", email,
+              _PASSWORD_RESET_TOKENS[email], "path=", reset_path)
         return {
             "message": "Password reset link sent",
             "email": email,
@@ -602,14 +679,16 @@ async def verify_email(email: str, code: str, session: AsyncSession):
             # for development/tests (canonical code '1234'). This ensures tests
             # that rely on the in-memory shortcut continue to pass even when a
             # DB is present.
-            fallback = _verify_code_globals(_EMAIL_VERIFICATION_CODES, email, code, canonical='1234')
+            fallback = _verify_code_globals(
+                _EMAIL_VERIFICATION_CODES, email, code, canonical='1234')
             if fallback.get('message') == 'verified':
                 _EMAIL_VERIFIED.add(email)
                 return {"message": "Email verified", "email": email}
             return res
         except OperationalError:
             # fallback to in-memory store when DB is unavailable
-            res = _verify_code_globals(_EMAIL_VERIFICATION_CODES, email, code, canonical='1234')
+            res = _verify_code_globals(
+                _EMAIL_VERIFICATION_CODES, email, code, canonical='1234')
             if res.get('message') == 'verified':
                 _EMAIL_VERIFIED.add(email)
                 return {"message": "Email verified", "email": email}
@@ -628,16 +707,17 @@ async def verify_otp(email: str, otp: str, session: AsyncSession):
                 return {"message": "OTP verified", "otp": otp}
             # allow globals fallback (canonical '9999') for dev/tests when DB
             # contains no entry for the given otp
-            fallback = _verify_code_globals(_OTP_CODES, email, otp, canonical='9999')
+            fallback = _verify_code_globals(
+                _OTP_CODES, email, otp, canonical='9999')
             if fallback.get('message') == 'verified':
                 return {"message": "OTP verified", "otp": otp}
             return res
         except OperationalError:
             # fallback to globals-only verification
-            res = _verify_code_globals(_OTP_CODES, email, otp, canonical='9999')
+            res = _verify_code_globals(
+                _OTP_CODES, email, otp, canonical='9999')
             if res.get('message') == 'verified':
                 return {"message": "OTP verified", "otp": otp}
             return res
     except Exception:
         return {"error": "invalid_otp"}
-

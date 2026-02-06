@@ -1,6 +1,4 @@
-import axios from "axios";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import api from "./api";
 
 export interface Role {
   id: number;
@@ -47,165 +45,60 @@ export interface UserRoleAssignment {
 const authorizersService = {
   // Roles
   async listRoles(): Promise<Role[]> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.get(`${API_URL}/api/authorizers/roles`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
+    const response = await api.get("/api/authorizers/roles");
     return response.data;
   },
 
   async getRole(id: number): Promise<Role> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.get(`${API_URL}/api/authorizers/roles/${id}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
+    const response = await api.get(`/api/authorizers/roles/${id}`);
     return response.data;
   },
 
   async createRole(data: CreateRoleRequest): Promise<Role> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.post(
-      `${API_URL}/api/authorizers/roles`,
-      data,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
+    const response = await api.post("/api/authorizers/roles", data);
     return response.data;
   },
 
   async updateRole(id: number, data: UpdateRoleRequest): Promise<Role> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.put(
-      `${API_URL}/api/authorizers/roles/${id}`,
-      data,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
+    const response = await api.put(`/api/authorizers/roles/${id}`, data);
     return response.data;
   },
 
   async deleteRole(id: number): Promise<void> {
-    const token = localStorage.getItem("token");
-
-    await axios.delete(`${API_URL}/api/authorizers/roles/${id}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    await api.delete(`/api/authorizers/roles/${id}`);
   },
 
   // Permissions
   async listPermissions(): Promise<Permission[]> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.get(`${API_URL}/api/authorizers/permissions`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
+    const response = await api.get("/api/authorizers/permissions");
     return response.data;
   },
 
   async getPermission(id: number): Promise<Permission> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.get(
-      `${API_URL}/api/authorizers/permissions/${id}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    );
-
+    const response = await api.get(`/api/authorizers/permissions/${id}`);
     return response.data;
   },
 
   async createPermission(data: CreatePermissionRequest): Promise<Permission> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.post(
-      `${API_URL}/api/authorizers/permissions`,
-      data,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
+    const response = await api.post("/api/authorizers/permissions", data);
     return response.data;
   },
 
   async deletePermission(id: number): Promise<void> {
-    const token = localStorage.getItem("token");
-
-    await axios.delete(`${API_URL}/api/authorizers/permissions/${id}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    await api.delete(`/api/authorizers/permissions/${id}`);
   },
 
   // User-Role assignments
   async assignRoleToUser(data: UserRoleAssignment): Promise<void> {
-    const token = localStorage.getItem("token");
-
-    await axios.post(`${API_URL}/api/authorizers/users/assign-role`, data, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
+    await api.post("/api/authorizers/users/assign-role", data);
   },
 
   async removeRoleFromUser(userId: number, roleId: number): Promise<void> {
-    const token = localStorage.getItem("token");
-
-    await axios.delete(
-      `${API_URL}/api/authorizers/users/${userId}/roles/${roleId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    );
+    await api.delete(`/api/authorizers/users/${userId}/roles/${roleId}`);
   },
 
   async getUserRoles(userId: number): Promise<Role[]> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.get(
-      `${API_URL}/api/authorizers/users/${userId}/roles`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    );
-
+    const response = await api.get(`/api/authorizers/users/${userId}/roles`);
     return response.data;
   },
 };

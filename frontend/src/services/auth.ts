@@ -2,7 +2,11 @@ import api from "./api";
 import { getAuthStore } from "../hooks/useAuth";
 
 export async function login(email: string, password: string) {
-  const resp = await api.post(`/auth/login`, { email, password }, { withCredentials: true });
+  const resp = await api.post(
+    `/auth/login`,
+    { email, password },
+    { withCredentials: true },
+  );
   const data = resp.data;
   if (data.access_token) {
     const store = getAuthStore();
@@ -26,7 +30,17 @@ export async function me() {
   return resp.data;
 }
 
-export async function register(email: string, password: string, meta?: { firstName?: string; lastName?: string }) {
+// Fetch complete user info with roles and permissions
+export async function getCurrentUserInfo() {
+  const resp = await api.get(`/user/me`);
+  return resp.data;
+}
+
+export async function register(
+  email: string,
+  password: string,
+  meta?: { firstName?: string; lastName?: string },
+) {
   const body: any = { email, password };
   if (meta) {
     if (meta.firstName) body.first_name = meta.firstName;

@@ -13,9 +13,12 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import NotificationsIcon from "@mui/icons-material/Notifications";
 import { ThemeToggle } from "./ThemeToggle";
+import usePermissions from "../hooks/usePermissions";
+import Chip from "@mui/material/Chip";
 
 export default function Header() {
   const profile = useAuthStore((s) => s.profile);
+  const { isSuperuser } = usePermissions();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   const handleOpen = (e: React.MouseEvent<HTMLElement>) =>
@@ -64,6 +67,9 @@ export default function Header() {
             <Button color="inherit" component={Link} to="/authorizers">
               Authorizers
             </Button>
+            <Button color="inherit" component={Link} to="/users">
+              Users
+            </Button>
             <Button color="inherit" component={Link} to="/audit-logs">
               Audit Logs
             </Button>
@@ -99,7 +105,36 @@ export default function Header() {
             anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
             transformOrigin={{ vertical: "top", horizontal: "right" }}
           >
-            <MenuItem onClick={handleClose}>Profile</MenuItem>
+            <Box sx={{ px: 2, py: 1, borderBottom: 1, borderColor: "divider" }}>
+              <Typography variant="body2" fontWeight="bold">
+                {profile?.email}
+              </Typography>
+              {isSuperuser && (
+                <Chip
+                  label="Superuser"
+                  size="small"
+                  color="error"
+                  sx={{ mt: 0.5 }}
+                />
+              )}
+              {profile?.roles && profile.roles.length > 0 && (
+                <Box
+                  sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 0.5 }}
+                >
+                  {profile.roles.map((role, idx) => (
+                    <Chip
+                      key={idx}
+                      label={role}
+                      size="small"
+                      variant="outlined"
+                    />
+                  ))}
+                </Box>
+              )}
+            </Box>
+            <MenuItem onClick={handleClose} component={Link} to="/dashboard">
+              Dashboard
+            </MenuItem>
             <MenuItem onClick={handleClose}>My account</MenuItem>
             <MenuItem
               onClick={async () => {

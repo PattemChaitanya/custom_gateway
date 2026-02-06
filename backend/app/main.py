@@ -1,3 +1,12 @@
+from app.metrics.prometheus import metrics_endpoint
+from app.api.admin import router as admin_router
+from app.api.authorizers import router as authorizers_router
+from app.api.connectors import router as connectors_router
+from app.api.keys import router as keys_router
+from app.authorizers.middleware import register_authorization_middleware
+from app.rate_limiter.middleware import register_rate_limit_middleware
+from app.metrics.middleware import register_metrics_middleware
+from app.validation.middleware import register_validation_middleware
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,42 +24,45 @@ configure_logging(level="INFO")
 logger = get_logger("gateway")
 logger.info("Server starting")
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Lifespan handler: initialize database connections and cleanup on shutdown.
-    
+
     The DatabaseManager will attempt to connect to AWS PostgreSQL first,
     and automatically fall back to in-memory storage if that fails.
     """
     # Initialize database manager
     db_manager = get_db_manager()
-    
+
     try:
         # Determine echo_sql from environment
         import os
-        echo_sql = os.getenv("SQL_ECHO", "False").lower() in ("1", "true", "yes")
-        
+        echo_sql = os.getenv("SQL_ECHO", "False").lower() in (
+            "1", "true", "yes")
+
         # Initialize database connections (Primary: AWS PostgreSQL, Fallback: In-memory)
         await db_manager.initialize(echo_sql=echo_sql)
-        
+
         # Log connection status
         conn_info = db_manager.get_connection_info()
         logger.info(
             f"Database initialized: {conn_info['database_type']} "
             f"(primary={conn_info['is_using_primary']})"
         )
-        
+
         # Perform health check
         health = await db_manager.health_check()
-        logger.info(f"Database health: {health['status']} - {health['message']}")
-        
+        logger.info(
+            f"Database health: {health['status']} - {health['message']}")
+
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
         logger.warning("Application will use in-memory fallback")
-    
+
     yield
-    
+
     # Cleanup on shutdown
     logger.info("Shutting down application")
     try:
@@ -75,27 +87,22 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     # Explicitly allow Authorization and common headers used by the frontend.
-    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language", "Content-Language", "X-API-Key"],
+    allow_headers=["Authorization", "Content-Type", "Accept",
+                   "Accept-Language", "Content-Language", "X-API-Key"],
     max_age=600,
 )
 
 # Register middlewares
-from app.middleware.request_logging import register_request_logging
-from app.validation.middleware import register_validation_middleware
-from app.metrics.middleware import register_metrics_middleware
-from app.rate_limiter.middleware import register_rate_limit_middleware
-from app.authorizers.middleware import register_authorization_middleware
 
 register_request_logging(app)  # Request logging with header redaction
-register_validation_middleware(app, max_body_size=10*1024*1024)  # Input validation
+register_validation_middleware(
+    app, max_body_size=10*1024*1024)  # Input validation
 register_metrics_middleware(app)  # Metrics collection
-register_rate_limit_middleware(app, global_limit=1000, global_window=60)  # Rate limiting
+register_rate_limit_middleware(
+    app, global_limit=1000, global_window=60)  # Rate limiting
 register_authorization_middleware(app)  # Authorization
 
 # Include routers
-from app.api.keys import router as keys_router
-from app.api.connectors import router as connectors_router
-from app.api.authorizers import router as authorizers_router
 
 app.include_router(user.router, prefix="/user", tags=["user"])
 app.include_router(auth_router.router)
@@ -103,9 +110,10 @@ app.include_router(apis_router)
 app.include_router(keys_router)
 app.include_router(connectors_router)
 app.include_router(authorizers_router)
+app.include_router(admin_router)
 
 # Metrics endpoint
-from app.metrics.prometheus import metrics_endpoint
+
 
 @app.get("/metrics", include_in_schema=False)
 async def metrics():
@@ -136,6 +144,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Note: DB schema creation is managed via Alembic migrations.
 
+
 @app.get("/")
 async def root():
     logger.info("Root endpoint called")
@@ -146,14 +155,14 @@ async def root():
 async def health_check():
     """
     Health check endpoint that includes database connection status.
-    
+
     Returns:
         dict: Health status including database connection information
     """
     db_manager = get_db_manager()
     db_health = await db_manager.health_check()
     conn_info = db_manager.get_connection_info()
-    
+
     return {
         "status": "healthy",
         "service": "Gateway Management API",
