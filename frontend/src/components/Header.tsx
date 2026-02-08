@@ -67,9 +67,6 @@ export default function Header() {
             <Button color="inherit" component={Link} to="/authorizers">
               Authorizers
             </Button>
-            <Button color="inherit" component={Link} to="/users">
-              Users
-            </Button>
             <Button color="inherit" component={Link} to="/audit-logs">
               Audit Logs
             </Button>

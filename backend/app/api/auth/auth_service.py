@@ -259,7 +259,7 @@ async def register_user(email: str, password: str, session: AsyncSession):
             role_result = await session.execute(
                 select(Role).where(Role.name == default_role)
             )
-            role = role_result.scalar_one_or_none()
+            role = role_result.scalars().first()
 
             if role:
                 # Assign role to user

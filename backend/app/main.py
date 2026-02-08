@@ -30,8 +30,10 @@ async def lifespan(app: FastAPI):
     """
     Lifespan handler: initialize database connections and cleanup on shutdown.
 
-    The DatabaseManager will attempt to connect to AWS PostgreSQL first,
-    and automatically fall back to in-memory storage if that fails.
+    The DatabaseManager will attempt to connect in this order:
+    1. AWS PostgreSQL (Primary)
+    2. SQLite (Secondary fallback)
+    3. In-memory storage (Final fallback)
     """
     # Initialize database manager
     db_manager = get_db_manager()
@@ -42,14 +44,16 @@ async def lifespan(app: FastAPI):
         echo_sql = os.getenv("SQL_ECHO", "False").lower() in (
             "1", "true", "yes")
 
-        # Initialize database connections (Primary: AWS PostgreSQL, Fallback: In-memory)
-        await db_manager.initialize(echo_sql=echo_sql)
+        # Initialize database connections with timeout to prevent hanging
+        logger.info("Initializing database connections...")
+        await db_manager.initialize(echo_sql=echo_sql, timeout=15)
 
         # Log connection status
         conn_info = db_manager.get_connection_info()
         logger.info(
             f"Database initialized: {conn_info['database_type']} "
-            f"(primary={conn_info['is_using_primary']})"
+            f"(primary={conn_info['is_using_primary']}, "
+            f"sqlite={conn_info['is_using_sqlite']})"
         )
 
         # Perform health check
@@ -59,7 +63,15 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
-        logger.warning("Application will use in-memory fallback")
+        logger.warning("Attempting to use in-memory fallback")
+        # Ensure we have at least in-memory database
+        try:
+            db_manager._initialize_fallback_database()
+            logger.info("In-memory fallback initialized successfully")
+        except Exception as fallback_error:
+            logger.critical(
+                f"Failed to initialize any database: {fallback_error}")
+            raise
 
     yield
 
@@ -172,6 +184,7 @@ async def health_check():
             "type": db_health["database"],
             "message": db_health["message"],
             "using_primary": conn_info["is_using_primary"],
+            "using_sqlite": conn_info["is_using_sqlite"],
         }
     }
 

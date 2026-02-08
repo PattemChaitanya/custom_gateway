@@ -18,8 +18,8 @@ class UserResponse(BaseModel):
     """User response schema."""
     id: int
     email: str
-    is_active: bool
-    is_superuser: bool
+    is_active: bool = True
+    is_superuser: bool = False
     roles: Optional[str] = None
     created_at: Optional[str] = None
 
@@ -67,8 +67,8 @@ async def list_users(
             UserResponse(
                 id=u.id,
                 email=u.email,
-                is_active=u.is_active,
-                is_superuser=u.is_superuser,
+                is_active=u.is_active if u.is_active is not None else True,
+                is_superuser=u.is_superuser if u.is_superuser is not None else False,
                 roles=u.roles,
                 created_at=u.created_at.isoformat() if u.created_at else None,
             )
@@ -199,8 +199,8 @@ async def update_user(
         return UserResponse(
             id=user.id,
             email=user.email,
-            is_active=user.is_active,
-            is_superuser=user.is_superuser,
+            is_active=user.is_active if user.is_active is not None else True,
+            is_superuser=user.is_superuser if user.is_superuser is not None else False,
             roles=user.roles,
             created_at=user.created_at.isoformat() if user.created_at else None,
         )

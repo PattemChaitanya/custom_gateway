@@ -2,21 +2,26 @@
 
 ## Overview
 
-The database connection system follows a robust **Primary/Fallback** strategy:
-1. **Primary**: AWS PostgreSQL (RDS/Aurora)
-2. **Fallback**: In-memory storage (automatic when primary fails)
+The database connection system follows a robust **Three-Tier Fallback** strategy:
+1. **Primary**: AWS PostgreSQL (RDS/Aurora) - Production database
+2. **Secondary**: SQLite - Persistent fallback storage
+3. **Final**: In-memory storage - Non-persistent fallback
+
+This architecture provides maximum resilience, ensuring the application remains functional even when the primary database is unavailable, while maintaining data persistence through SQLite when possible.
 
 ## Architecture Components
 
 ### 1. DatabaseManager (`db_manager.py`)
-Central component that manages database connections with automatic fallback.
+Central component that manages database connections with automatic three-tier fallback.
 
 **Key Features:**
 - Singleton pattern for global connection management
-- Automatic connection health checks
+- Automatic three-tier fallback (PostgreSQL → SQLite → In-memory)
+- Connection health checks for each tier
 - Connection pooling with configurable pool size
 - SSL/TLS support for AWS RDS
-- Graceful degradation to in-memory storage
+- Persistent fallback storage with SQLite
+- Graceful degradation to in-memory storage as last resort
 - Comprehensive error handling and logging
 
 **Usage:**
@@ -36,11 +41,13 @@ async def list_apis(db = Depends(get_db)):
 
 # Check health status
 health = await db_manager.health_check()
-print(f"Database: {health['database']}, Status: {health['status']}")
+print(f"Database: {health['database']}, Status: {health['status']}")  # postgresql, sqlite, or in-memory
 
 # Get connection info
 info = db_manager.get_connection_info()
 print(f"Using primary: {info['is_using_primary']}")
+print(f"Using SQLite: {info['is_using_sqlite']}")
+print(f"Database type: {info['database_type']}")  # postgresql, sqlite, or in-memory
 ```
 
 ### 2. Progress SQL Utilities (`progress_sql.py`)
@@ -69,6 +76,9 @@ AWS_SSLROOTCERT=/path/to/rds-ca-cert.pem
 AWS_DB_SECRET=my-db-secret-name
 AWS_REGION=us-east-1
 
+# SQLite Configuration (secondary fallback)
+SQLITE_DB_PATH=gateway.db  # Default: gateway.db
+
 # Direct URL (highest priority)
 DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/dbname
 
@@ -76,26 +86,57 @@ DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/dbname
 SQL_ECHO=false
 ```
 
-### 3. In-Memory Database (`inmemory.py`)
-Lightweight in-memory storage that mimics the SQLAlchemy interface.
+### 3. SQLite Database (`sqlite_db.py`)
+Persistent secondary fallback storage using SQLite with async support.
 
 **Features:**
 - Compatible with AsyncSession interface
 - SimpleNamespace objects for Pydantic compatibility
-- No-op transaction methods (commit, rollback, refresh)
-- Automatic data clearing on restart
+- Async operations using aiosqlite
+- Persistent storage across application restarts
+- Automatic table creation
+- Full transaction support (commit, rollback)
+- Configurable database file path
 
 **Usage:**
 ```python
 # Automatically used when PostgreSQL is unavailable
 # No code changes needed - CRUD operations work identically
 
-# Check if using in-memory
-if hasattr(db, 'in_memory') and db.in_memory:
-    print("Using in-memory fallback")
+# Check if using SQLite
+if hasattr(db, 'in_memory'):
+    if not db.in_memory and hasattr(db, 'db_path'):
+        print(f"Using SQLite fallback at: {db.db_path}")
 ```
 
-### 4. Connector (`connector.py`)
+**Configuration:**
+```bash
+# Set custom SQLite database path
+export SQLITE_DB_PATH="/path/to/your/database.db"
+```
+
+### 4. In-Memory Database (`inmemory.py`)
+Lightweight in-memory storage as the final fallback option.
+
+**Features:**
+- Compatible with AsyncSession interface
+- SimpleNamespace objects for Pydantic compatibility
+- No-op transaction methods (commit, rollback, refresh)
+- Automatic data clearing on restart
+- Used only when both PostgreSQL and SQLite are unavailable
+
+**Usage:**
+```python
+# Automatically used as last resort fallback
+# No code changes needed - CRUD operations work identically
+
+# Check if using in-memory
+if hasattr(db, 'in_memory') and db.in_memory:
+    print("Using in-memory final fallback")
+    # Warning: Data will be lost on restart!
+```
+
+### 5. Connector (`connector.py`)
 Backward compatibility layer for legacy code.
 
 **Status:** Deprecated - Use `db_manager` for new code
@@ -117,8 +158,15 @@ The system attempts connections in this order:
    ↓ (if not found)
 3. AWS Environment Variables (AWS_DB_HOST, AWS_DB_NAME, etc.)
    ↓ (if connection fails)
-4. In-Memory Storage (automatic fallback)
+4. SQLite Database (SQLITE_DB_PATH or default: gateway.db)
+   ↓ (if SQLite fails)
+5. In-Memory Storage (final automatic fallback)
 ```
+
+**Fallback Hierarchy:**
+- **PostgreSQL**: Production-grade persistent storage
+- **SQLite**: Persistent fallback for development/degraded operation
+- **In-Memory**: Non-persistent fallback for testing/emergency operation
 
 ## Connection Pooling
 
@@ -152,19 +200,27 @@ The system handles various failure scenarios:
 
 ### Scenario 1: PostgreSQL Unavailable at Startup
 ```
-Result: Automatic fallback to in-memory storage
-Log: "Primary database connection failed. Falling back to in-memory storage."
+Result: Automatic fallback to SQLite storage
+Log: "Primary database connection failed. Connected to secondary fallback database (SQLite)"
 ```
 
-### Scenario 2: Connection Lost During Operation
+### Scenario 2: Both PostgreSQL and SQLite Unavailable
+```
+Result: Automatic fallback to in-memory storage
+Log: "Primary and secondary database connections failed. Falling back to in-memory storage."
+Warning: Data will not persist across restarts
+```
+
+### Scenario 3: Connection Lost During Operation
 ```
 Result: Operation fails with proper error
 Recommendation: Implement retry logic in application code
+Note: DatabaseManager maintains pool_pre_ping to minimize this scenario
 ```
 
-### Scenario 3: Missing AWS Credentials
+### Scenario 4: Missing AWS Credentials
 ```
-Result: Automatic fallback to in-memory storage
+Result: Automatic fallback to SQLite, then in-memory storage
 Log: "No database URL configured"
 ```
 
@@ -184,9 +240,10 @@ Response:
   "version": "1.0.0",
   "database": {
     "status": "healthy",
-    "type": "postgresql",
+    "type": "postgresql",  // Can be: postgresql, sqlite, or in-memory
     "message": "Primary database connection is healthy",
-    "using_primary": true
+    "using_primary": true,
+    "using_sqlite": false
   }
 }
 ```

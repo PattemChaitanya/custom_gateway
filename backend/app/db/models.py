@@ -13,14 +13,15 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(320), unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
-    is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_superuser = Column(Boolean, default=False, nullable=False)
     # optional comma-separated roles field for simple RBAC (e.g. 'admin,editor')
     roles = Column(String, default='', nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+    refresh_tokens = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan")
 
 
 class RefreshToken(Base):
@@ -28,7 +29,8 @@ class RefreshToken(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     token = Column(String, unique=True, nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey(
+        "users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked = Column(Boolean, default=False)
@@ -51,13 +53,15 @@ class OTP(Base):
 
 class API(Base):
     __tablename__ = "apis"
-    __table_args__ = (UniqueConstraint('name', 'version', name='uq_api_name_version'),)
+    __table_args__ = (UniqueConstraint(
+        'name', 'version', name='uq_api_name_version'),)
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, index=True)
     version = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
-    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    owner_id = Column(Integer, ForeignKey(
+        "users.id", ondelete="SET NULL"), nullable=True, index=True)
     # canonical configuration for the API (paths, defaults, etc.)
     # optional API type (rest/graphql) stored as a simple string for quick queries
     type = Column(String, nullable=True)
@@ -67,17 +71,22 @@ class API(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    schemas = relationship("Schema", back_populates="api", cascade="all, delete-orphan")
-    auth_policies = relationship("AuthPolicy", back_populates="api", cascade="all, delete-orphan")
-    rate_limits = relationship("RateLimit", back_populates="api", cascade="all, delete-orphan")
-    connectors = relationship("Connector", back_populates="api", cascade="all, delete-orphan")
+    schemas = relationship("Schema", back_populates="api",
+                           cascade="all, delete-orphan")
+    auth_policies = relationship(
+        "AuthPolicy", back_populates="api", cascade="all, delete-orphan")
+    rate_limits = relationship(
+        "RateLimit", back_populates="api", cascade="all, delete-orphan")
+    connectors = relationship(
+        "Connector", back_populates="api", cascade="all, delete-orphan")
 
 
 class Schema(Base):
     __tablename__ = "schemas"
 
     id = Column(Integer, primary_key=True, index=True)
-    api_id = Column(Integer, ForeignKey("apis.id", ondelete="CASCADE"), nullable=False, index=True)
+    api_id = Column(Integer, ForeignKey(
+        "apis.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
     # store JSON Schema or raw schema text
     definition = Column(JSON, nullable=True)
@@ -92,7 +101,8 @@ class AuthPolicy(Base):
     __tablename__ = "auth_policies"
 
     id = Column(Integer, primary_key=True, index=True)
-    api_id = Column(Integer, ForeignKey("apis.id", ondelete="CASCADE"), nullable=False, index=True)
+    api_id = Column(Integer, ForeignKey(
+        "apis.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
     type = Column(String, nullable=False)  # e.g. 'apiKey', 'oauth2', 'jwt'
     config = Column(JSON, nullable=True)
@@ -106,9 +116,11 @@ class RateLimit(Base):
     __tablename__ = "rate_limits"
 
     id = Column(Integer, primary_key=True, index=True)
-    api_id = Column(Integer, ForeignKey("apis.id", ondelete="CASCADE"), nullable=False, index=True)
+    api_id = Column(Integer, ForeignKey(
+        "apis.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
-    key_type = Column(String, nullable=False, default='global')  # per-key, per-ip, global
+    # per-key, per-ip, global
+    key_type = Column(String, nullable=False, default='global')
     limit = Column(Integer, nullable=False)
     window_seconds = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -121,7 +133,8 @@ class Connector(Base):
     __tablename__ = "connectors"
 
     id = Column(Integer, primary_key=True, index=True)
-    api_id = Column(Integer, ForeignKey("apis.id", ondelete="CASCADE"), nullable=True, index=True)
+    api_id = Column(Integer, ForeignKey(
+        "apis.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String, nullable=False, index=True)
     type = Column(String, nullable=False)  # e.g. 'http', 'lambda', 'kafka'
     config = Column(JSON, nullable=True)
@@ -150,7 +163,8 @@ class APIKey(Base):
     label = Column(String, nullable=True)
     scopes = Column(String, nullable=True)  # comma-separated scopes
     revoked = Column(Boolean, default=False)
-    environment_id = Column(Integer, ForeignKey("environments.id", ondelete="SET NULL"), nullable=True, index=True)
+    environment_id = Column(Integer, ForeignKey(
+        "environments.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=True)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
@@ -182,23 +196,23 @@ class Secret(Base):
     tags = Column(String, nullable=True)  # comma-separated tags
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     # Hybrid property for test compatibility - works both in Python and SQL
     @hybrid_property
     def key(self):
         """Alias for 'name' attribute for test compatibility."""
         return self.name
-    
+
     @key.expression
     def key(cls):
         """SQL expression for key (maps to name column)."""
         return cls.name
-    
+
     @hybrid_property
     def encrypted_value(self):
         """Alias for 'value' attribute for test compatibility."""
         return self.value
-    
+
     @encrypted_value.expression
     def encrypted_value(cls):
         """SQL expression for encrypted_value (maps to value column)."""
@@ -209,10 +223,14 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    action = Column(String, nullable=False, index=True)  # CREATE, UPDATE, DELETE, LOGIN, etc.
-    resource_type = Column(String, nullable=True, index=True)  # API, User, Key, etc.
+    timestamp = Column(DateTime(timezone=True),
+                       server_default=func.now(), index=True)
+    user_id = Column(Integer, ForeignKey(
+        "users.id", ondelete="SET NULL"), nullable=True, index=True)
+    # CREATE, UPDATE, DELETE, LOGIN, etc.
+    action = Column(String, nullable=False, index=True)
+    # API, User, Key, etc.
+    resource_type = Column(String, nullable=True, index=True)
     resource_id = Column(String, nullable=True)
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
@@ -227,14 +245,18 @@ class Metric(Base):
     __tablename__ = "metrics"
 
     id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
-    metric_type = Column(String, nullable=False, index=True)  # request, latency, error
+    timestamp = Column(DateTime(timezone=True),
+                       server_default=func.now(), index=True)
+    # request, latency, error
+    metric_type = Column(String, nullable=False, index=True)
     endpoint = Column(String, nullable=True, index=True)
     method = Column(String, nullable=True)
     status_code = Column(Integer, nullable=True)
     latency_ms = Column(Integer, nullable=True)
-    api_id = Column(Integer, ForeignKey("apis.id", ondelete="SET NULL"), nullable=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    api_id = Column(Integer, ForeignKey(
+        "apis.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey(
+        "users.id", ondelete="SET NULL"), nullable=True)
     metadata_json = Column(JSON, name="metadata", nullable=True)
 
     api = relationship("API")
@@ -246,9 +268,12 @@ class BackendPool(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True, index=True)
-    api_id = Column(Integer, ForeignKey("apis.id", ondelete="CASCADE"), nullable=True, index=True)
-    algorithm = Column(String, nullable=False, default='round_robin')  # round_robin, least_connections, weighted
-    backends = Column(JSON, nullable=False)  # List of backend URLs with weights
+    api_id = Column(Integer, ForeignKey(
+        "apis.id", ondelete="CASCADE"), nullable=True, index=True)
+    # round_robin, least_connections, weighted
+    algorithm = Column(String, nullable=False, default='round_robin')
+    # List of backend URLs with weights
+    backends = Column(JSON, nullable=False)
     health_check_url = Column(String, nullable=True)
     health_check_interval = Column(Integer, default=30)  # seconds
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -260,10 +285,12 @@ class BackendPool(Base):
 class Permission(Base):
     __tablename__ = "permissions"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True, index=True)
-    resource = Column(String, nullable=False, index=True)  # e.g., 'api', 'user', 'key'
-    action = Column(String, nullable=False, index=True)  # e.g., 'create', 'read', 'update', 'delete'
+    # e.g., 'api', 'user', 'key'
+    resource = Column(String, nullable=False, index=True)
+    # e.g., 'create', 'read', 'update', 'delete'
+    action = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -271,10 +298,11 @@ class Permission(Base):
 class Role(Base):
     __tablename__ = "roles"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True, index=True)
     description = Column(Text, nullable=True)
-    permissions = Column(JSON, nullable=True)  # List of permission IDs or names
+    # List of permission IDs or names
+    permissions = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -283,8 +311,10 @@ class UserRole(Base):
     __tablename__ = "user_roles"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey(
+        "users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role_id = Column(Integer, ForeignKey(
+        "roles.id", ondelete="CASCADE"), nullable=False, index=True)
     assigned_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User")
@@ -295,14 +325,14 @@ class ModuleScript(Base):
     __tablename__ = "module_scripts"
 
     id = Column(Integer, primary_key=True, index=True)
-    module_id = Column(Integer, ForeignKey("module_metadata.id", ondelete="CASCADE"), nullable=False, index=True)
+    module_id = Column(Integer, ForeignKey(
+        "module_metadata.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
-    script_type = Column(String, nullable=False)  # python, javascript, bash, etc.
+    # python, javascript, bash, etc.
+    script_type = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     module = relationship("ModuleMetadata")
-
-

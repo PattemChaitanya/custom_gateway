@@ -15,7 +15,6 @@ import { Secrets } from "./pages/Secrets";
 import { AuditLogs } from "./pages/AuditLogs";
 import Connectors from "./pages/Connectors";
 import Authorizers from "./pages/Authorizers";
-import Users from "./pages/Users";
 
 export default function AppRoutes() {
   return (
@@ -36,7 +35,6 @@ export default function AppRoutes() {
         <Route path="/audit-logs" element={<AuditLogs />} />
         <Route path="/connectors" element={<Connectors />} />
         <Route path="/authorizers" element={<Authorizers />} />
-        <Route path="/users" element={<Users />} />
         {/* <Route path="/apis/:id/routes" element={<RoutesPage />} /> */}
       </Route>
     </Routes>

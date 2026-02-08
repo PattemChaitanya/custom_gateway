@@ -44,10 +44,12 @@ const userService = {
   },
 
   /**
-   * Get current user's information
+   * Get current user's information from /auth/me endpoint.
+   * Returns comprehensive user data including roles and permissions.
+   * Note: This calls the auth endpoint, not a user endpoint.
    */
   async getCurrentUser(): Promise<UserWithRoles> {
-    const response = await api.get("/user/me");
+    const response = await api.get("/auth/me");
     return response.data;
   },
 

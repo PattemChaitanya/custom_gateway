@@ -24,17 +24,39 @@ class RBACManager:
         name: str,
         description: Optional[str] = None,
         permissions: Optional[List[str]] = None,
+        id: Optional[int] = None,
+        created_at: Optional[str] = None,
+        updated_at: Optional[str] = None,
     ) -> Role:
         """Create a new role."""
-        role = Role(
-            name=name,
-            description=description,
-            permissions=permissions or [],
-        )
+        from datetime import datetime
+
+        role_data = {
+            "name": name,
+            "description": description,
+            "permissions": permissions or [],
+        }
+
+        # Add optional fields if provided
+        if id is not None:
+            role_data["id"] = id
+        if created_at is not None:
+            role_data["created_at"] = datetime.fromisoformat(
+                created_at.replace('Z', '+00:00'))
+        if updated_at is not None:
+            role_data["updated_at"] = datetime.fromisoformat(
+                updated_at.replace('Z', '+00:00'))
+
+        role = Role(**role_data)
+        print(f"Creating role: {name} with permissions: {permissions}, {role}")
 
         self.session.add(role)
+        print(f"Added role to session: {role}-1")
+        await self.session.flush()  # Flush to assign ID
+        print(f"Flushed role with ID: {role.id}")
         await self.session.commit()
         await self.session.refresh(role)
+        print(f"Created role: {role} with ID: {role.id}")
 
         logger.info(f"Created role: {name}")
         return role
@@ -43,13 +65,6 @@ class RBACManager:
         """Get a role by ID."""
         result = await self.session.execute(
             select(Role).where(Role.id == role_id)
-        )
-        return result.scalars().first()
-
-    async def get_role_by_name(self, name: str) -> Optional[Role]:
-        """Get a role by name."""
-        result = await self.session.execute(
-            select(Role).where(Role.name == name)
         )
         return result.scalars().first()
 

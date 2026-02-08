@@ -15,9 +15,16 @@ router = APIRouter(prefix="/api/authorizers", tags=["Authorizers"])
 # Pydantic schemas
 class RoleCreate(BaseModel):
     """Schema for creating a role."""
-    name: str = Field(..., min_length=1, max_length=255, description="Role name")
+    name: str = Field(..., min_length=1, max_length=255,
+                      description="Role name")
     description: Optional[str] = Field(None, description="Role description")
-    permissions: Optional[List[str]] = Field(default_factory=list, description="List of permission names")
+    permissions: Optional[List[str]] = Field(
+        default_factory=list, description="List of permission names")
+    id: Optional[int] = Field(None, description="Optional ID for the role")
+    created_at: Optional[str] = Field(
+        None, description="Optional creation timestamp")
+    updated_at: Optional[str] = Field(
+        None, description="Optional update timestamp")
 
 
 class RoleUpdate(BaseModel):
@@ -42,10 +49,14 @@ class RoleResponse(BaseModel):
 
 class PermissionCreate(BaseModel):
     """Schema for creating a permission."""
-    name: str = Field(..., min_length=1, max_length=255, description="Permission name")
-    resource: str = Field(..., description="Resource type (e.g., 'api', 'user', 'key')")
-    action: str = Field(..., description="Action (e.g., 'create', 'read', 'update', 'delete')")
-    description: Optional[str] = Field(None, description="Permission description")
+    name: str = Field(..., min_length=1, max_length=255,
+                      description="Permission name")
+    resource: str = Field(...,
+                          description="Resource type (e.g., 'api', 'user', 'key')")
+    action: str = Field(...,
+                        description="Action (e.g., 'create', 'read', 'update', 'delete')")
+    description: Optional[str] = Field(
+        None, description="Permission description")
 
 
 class PermissionUpdate(BaseModel):
@@ -84,18 +95,25 @@ async def create_role(
 ):
     """
     Create a new role.
-    
+
     Requires authentication. Creates a role with specified permissions.
     """
     manager = RBACManager(db)
-    
+    print(role_data, db, current_user, manager,
+          flush=True)  # Debugging statement
+
     try:
         role = await manager.create_role(
             name=role_data.name,
             description=role_data.description,
             permissions=role_data.permissions,
+            id=role_data.id,
+            created_at=role_data.created_at,
+            updated_at=role_data.updated_at,
         )
-        
+
+        print(f"Created route role: {role}", flush=True)  # Debugging statement
+
         return RoleResponse(
             id=role.id,
             name=role.name,
@@ -118,10 +136,10 @@ async def list_roles(
 ):
     """List all roles."""
     manager = RBACManager(db)
-    
+
     try:
         roles = await manager.list_roles()
-        
+
         return [
             RoleResponse(
                 id=r.id,
@@ -148,15 +166,15 @@ async def get_role(
 ):
     """Get a specific role by ID."""
     manager = RBACManager(db)
-    
+
     role = await manager.get_role(role_id)
-    
+
     if not role:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Role {role_id} not found"
         )
-    
+
     return RoleResponse(
         id=role.id,
         name=role.name,
@@ -176,7 +194,7 @@ async def update_role(
 ):
     """Update a role."""
     manager = RBACManager(db)
-    
+
     # Build update dict
     update_data = {}
     if role_data.name is not None:
@@ -185,15 +203,15 @@ async def update_role(
         update_data["description"] = role_data.description
     if role_data.permissions is not None:
         update_data["permissions"] = role_data.permissions
-    
+
     role = await manager.update_role(role_id, **update_data)
-    
+
     if not role:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Role {role_id} not found"
         )
-    
+
     return RoleResponse(
         id=role.id,
         name=role.name,
@@ -212,15 +230,15 @@ async def delete_role(
 ):
     """Delete a role."""
     manager = RBACManager(db)
-    
+
     success = await manager.delete_role(role_id)
-    
+
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Role {role_id} not found"
         )
-    
+
     return {"message": f"Role {role_id} deleted successfully"}
 
 
@@ -233,7 +251,7 @@ async def create_permission(
 ):
     """Create a new permission."""
     manager = RBACManager(db)
-    
+
     try:
         permission = await manager.create_permission(
             name=permission_data.name,
@@ -241,7 +259,7 @@ async def create_permission(
             action=permission_data.action,
             description=permission_data.description,
         )
-        
+
         return PermissionResponse(
             id=permission.id,
             name=permission.name,
@@ -264,10 +282,10 @@ async def list_permissions(
 ):
     """List all permissions."""
     manager = RBACManager(db)
-    
+
     try:
         permissions = await manager.list_permissions()
-        
+
         return [
             PermissionResponse(
                 id=p.id,
@@ -294,15 +312,15 @@ async def get_permission(
 ):
     """Get a specific permission by ID."""
     manager = RBACManager(db)
-    
+
     permission = await manager.get_permission(permission_id)
-    
+
     if not permission:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Permission {permission_id} not found"
         )
-    
+
     return PermissionResponse(
         id=permission.id,
         name=permission.name,
@@ -321,15 +339,15 @@ async def delete_permission(
 ):
     """Delete a permission."""
     manager = RBACManager(db)
-    
+
     success = await manager.delete_permission(permission_id)
-    
+
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Permission {permission_id} not found"
         )
-    
+
     return {"message": f"Permission {permission_id} deleted successfully"}
 
 
@@ -342,7 +360,7 @@ async def assign_role_to_user(
 ):
     """Assign a role to a user."""
     manager = RBACManager(db)
-    
+
     try:
         await manager.assign_role_to_user(assignment.user_id, assignment.role_id)
         return {"message": f"Role {assignment.role_id} assigned to user {assignment.user_id}"}
@@ -362,7 +380,7 @@ async def remove_role_from_user(
 ):
     """Remove a role from a user."""
     manager = RBACManager(db)
-    
+
     try:
         await manager.remove_role_from_user(user_id, role_id)
         return {"message": f"Role {role_id} removed from user {user_id}"}
@@ -381,10 +399,10 @@ async def get_user_roles(
 ):
     """Get all roles assigned to a user."""
     manager = RBACManager(db)
-    
+
     try:
         roles = await manager.get_user_roles(user_id)
-        
+
         return [
             RoleResponse(
                 id=r.id,
