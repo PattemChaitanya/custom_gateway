@@ -95,6 +95,17 @@ async def get_me(
         roles = await manager.get_user_roles(user.id)
         permissions = await manager.get_user_permissions(user.id)
 
+        # Helper to convert datetime or string to ISO format
+        def to_isoformat(dt):
+            if dt is None:
+                return None
+            if isinstance(dt, str):
+                return dt
+            from datetime import datetime
+            if isinstance(dt, datetime):
+                return dt.isoformat()
+            return str(dt)
+
         return {
             "id": user.id,
             "email": user.email,
@@ -103,7 +114,7 @@ async def get_me(
             "legacy_roles": user.roles,
             "roles": [r.name for r in roles],
             "permissions": list(permissions),
-            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "created_at": to_isoformat(user.created_at),
         }
     except Exception as e:
         return {"error": f"Failed to get user info: {str(e)}"}

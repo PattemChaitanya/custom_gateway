@@ -282,6 +282,33 @@ class BackendPool(Base):
     api = relationship("API")
 
 
+class LoadBalancer(Base):
+    __tablename__ = "load_balancers"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    api_id = Column(Integer, ForeignKey(
+        "apis.id", ondelete="CASCADE"), nullable=True, index=True)
+    algorithm = Column(String, nullable=False, default='round_robin')
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    api = relationship("API")
+
+
+class Backend(Base):
+    __tablename__ = "backends"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    load_balancer_id = Column(Integer, ForeignKey(
+        "load_balancers.id", ondelete="CASCADE"), nullable=False, index=True)
+    url = Column(String, nullable=False)
+    weight = Column(Integer, default=1)
+    healthy = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    load_balancer = relationship("LoadBalancer")
+
+
 class Permission(Base):
     __tablename__ = "permissions"
 

@@ -1,6 +1,4 @@
-import axios from "axios";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import api from "./api";
 
 export interface Connector {
   id: number;
@@ -35,80 +33,32 @@ export interface ConnectorTestResult {
 
 const connectorsService = {
   async list(api_id?: number): Promise<Connector[]> {
-    const token = localStorage.getItem("token");
     const params = api_id ? { api_id } : {};
-
-    const response = await axios.get(`${API_URL}/api/connectors`, {
-      params,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
+    const response = await api.get(`/api/connectors`, { params });
     return response.data;
   },
 
   async get(id: number): Promise<Connector> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.get(`${API_URL}/api/connectors/${id}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
+    const response = await api.get(`/api/connectors/${id}`);
     return response.data;
   },
 
   async create(data: CreateConnectorRequest): Promise<Connector> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.post(`${API_URL}/api/connectors`, data, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
+    const response = await api.post(`/api/connectors`, data);
     return response.data;
   },
 
   async update(id: number, data: UpdateConnectorRequest): Promise<Connector> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.put(`${API_URL}/api/connectors/${id}`, data, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
+    const response = await api.put(`/api/connectors/${id}`, data);
     return response.data;
   },
 
   async delete(id: number): Promise<void> {
-    const token = localStorage.getItem("token");
-
-    await axios.delete(`${API_URL}/api/connectors/${id}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    await api.delete(`/api/connectors/${id}`);
   },
 
   async test(id: number): Promise<ConnectorTestResult> {
-    const token = localStorage.getItem("token");
-
-    const response = await axios.post(
-      `${API_URL}/api/connectors/${id}/test`,
-      {},
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    );
-
+    const response = await api.post(`/api/connectors/${id}/test`, {});
     return response.data;
   },
 };

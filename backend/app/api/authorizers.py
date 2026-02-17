@@ -1,6 +1,7 @@
 """Authorizers management router (RBAC)."""
 
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -10,6 +11,45 @@ from app.api.auth.auth_dependency import get_current_user
 from app.db.models import User
 
 router = APIRouter(prefix="/api/authorizers", tags=["Authorizers"])
+
+
+# Helper function to safely convert datetime or string to ISO format
+def to_isoformat(dt) -> str:
+    """Convert datetime or string to ISO format string."""
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        return dt
+    if isinstance(dt, datetime):
+        return dt.isoformat()
+    return str(dt)
+
+
+def _normalize_permissions(perms):
+    """Ensure permissions is a list of strings for JSON responses."""
+    if not perms:
+        return []
+    out = []
+    for p in perms:
+        try:
+            if isinstance(p, str):
+                out.append(p)
+            elif isinstance(p, dict):
+                if 'name' in p:
+                    out.append(str(p['name']))
+                elif 'id' in p:
+                    out.append(str(p['id']))
+                else:
+                    out.append(str(p))
+            elif hasattr(p, 'name'):
+                out.append(str(getattr(p, 'name')))
+            elif hasattr(p, 'id'):
+                out.append(str(getattr(p, 'id')))
+            else:
+                out.append(str(p))
+        except Exception:
+            out.append(str(p))
+    return out
 
 
 # Pydantic schemas
@@ -43,8 +83,7 @@ class RoleResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class PermissionCreate(BaseModel):
@@ -76,8 +115,7 @@ class PermissionResponse(BaseModel):
     description: Optional[str]
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class UserRoleAssignment(BaseModel):
@@ -118,9 +156,9 @@ async def create_role(
             id=role.id,
             name=role.name,
             description=role.description,
-            permissions=role.permissions or [],
-            created_at=role.created_at.isoformat() if role.created_at else "",
-            updated_at=role.updated_at.isoformat() if role.updated_at else None,
+            permissions=_normalize_permissions(role.permissions),
+            created_at=to_isoformat(role.created_at) or "",
+            updated_at=to_isoformat(role.updated_at),
         )
     except Exception as e:
         raise HTTPException(
@@ -145,9 +183,9 @@ async def list_roles(
                 id=r.id,
                 name=r.name,
                 description=r.description,
-                permissions=r.permissions or [],
-                created_at=r.created_at.isoformat() if r.created_at else "",
-                updated_at=r.updated_at.isoformat() if r.updated_at else None,
+                permissions=_normalize_permissions(r.permissions),
+                created_at=to_isoformat(r.created_at) or "",
+                updated_at=to_isoformat(r.updated_at),
             )
             for r in roles
         ]
@@ -179,9 +217,9 @@ async def get_role(
         id=role.id,
         name=role.name,
         description=role.description,
-        permissions=role.permissions or [],
-        created_at=role.created_at.isoformat() if role.created_at else "",
-        updated_at=role.updated_at.isoformat() if role.updated_at else None,
+        permissions=_normalize_permissions(role.permissions),
+        created_at=to_isoformat(role.created_at) or "",
+        updated_at=to_isoformat(role.updated_at),
     )
 
 
@@ -216,9 +254,9 @@ async def update_role(
         id=role.id,
         name=role.name,
         description=role.description,
-        permissions=role.permissions or [],
-        created_at=role.created_at.isoformat() if role.created_at else "",
-        updated_at=role.updated_at.isoformat() if role.updated_at else None,
+        permissions=_normalize_permissions(role.permissions),
+        created_at=to_isoformat(role.created_at) or "",
+        updated_at=to_isoformat(role.updated_at),
     )
 
 
@@ -266,7 +304,7 @@ async def create_permission(
             resource=permission.resource,
             action=permission.action,
             description=permission.description,
-            created_at=permission.created_at.isoformat() if permission.created_at else "",
+            created_at=to_isoformat(permission.created_at) or "",
         )
     except Exception as e:
         raise HTTPException(
@@ -293,7 +331,7 @@ async def list_permissions(
                 resource=p.resource,
                 action=p.action,
                 description=p.description,
-                created_at=p.created_at.isoformat() if p.created_at else "",
+                created_at=to_isoformat(p.created_at) or "",
             )
             for p in permissions
         ]
@@ -327,7 +365,7 @@ async def get_permission(
         resource=permission.resource,
         action=permission.action,
         description=permission.description,
-        created_at=permission.created_at.isoformat() if permission.created_at else "",
+        created_at=to_isoformat(permission.created_at) or "",
     )
 
 
@@ -408,9 +446,9 @@ async def get_user_roles(
                 id=r.id,
                 name=r.name,
                 description=r.description,
-                permissions=r.permissions or [],
-                created_at=r.created_at.isoformat() if r.created_at else "",
-                updated_at=r.updated_at.isoformat() if r.updated_at else None,
+                permissions=_normalize_permissions(r.permissions),
+                created_at=to_isoformat(r.created_at) or "",
+                updated_at=to_isoformat(r.updated_at),
             )
             for r in roles
         ]

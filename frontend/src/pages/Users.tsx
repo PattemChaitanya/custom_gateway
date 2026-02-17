@@ -55,6 +55,15 @@ const Users: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editFormData, setEditFormData] = useState<UserUpdate>({});
 
+  // Create user dialog
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createFormData, setCreateFormData] = useState<{
+    email: string;
+    password: string;
+    is_active?: boolean;
+    is_superuser?: boolean;
+  }>({ email: "", password: "", is_active: true, is_superuser: false });
+
   // User details dialog
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserWithRoles | null>(null);
@@ -209,6 +218,16 @@ const Users: React.FC = () => {
           User Management
         </Typography>
         <Box>
+          {hasPermission("user:create") || isSuperuser ? (
+            <Button
+              startIcon={<PersonAddIcon />}
+              onClick={() => setCreateDialogOpen(true)}
+              sx={{ mr: 1 }}
+              variant="contained"
+            >
+              Add User
+            </Button>
+          ) : null}
           <Button startIcon={<RefreshIcon />} onClick={loadData} sx={{ mr: 1 }}>
             Refresh
           </Button>
@@ -405,6 +424,91 @@ const Users: React.FC = () => {
             color="primary"
           >
             Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Create User Dialog */}
+      <Dialog
+        open={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Create User</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+            <TextField
+              label="Email"
+              type="email"
+              fullWidth
+              value={createFormData.email}
+              onChange={(e) =>
+                setCreateFormData({ ...createFormData, email: e.target.value })
+              }
+            />
+            <TextField
+              label="Password"
+              type="password"
+              fullWidth
+              value={createFormData.password}
+              onChange={(e) =>
+                setCreateFormData({
+                  ...createFormData,
+                  password: e.target.value,
+                })
+              }
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={createFormData.is_active ?? true}
+                  onChange={(e) =>
+                    setCreateFormData({
+                      ...createFormData,
+                      is_active: e.target.checked,
+                    })
+                  }
+                />
+              }
+              label="Active"
+            />
+            {isSuperuser && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={createFormData.is_superuser ?? false}
+                    onChange={(e) =>
+                      setCreateFormData({
+                        ...createFormData,
+                        is_superuser: e.target.checked,
+                      })
+                    }
+                  />
+                }
+                label="Superuser"
+              />
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={async () => {
+              try {
+                await userService.createUser(createFormData as any);
+                setSuccess("User created successfully");
+                setCreateDialogOpen(false);
+                loadData();
+                setTimeout(() => setSuccess(null), 3000);
+              } catch (err: any) {
+                setError(err.response?.data?.detail || "Failed to create user");
+              }
+            }}
+            variant="contained"
+            color="primary"
+          >
+            Create
           </Button>
         </DialogActions>
       </Dialog>

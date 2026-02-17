@@ -68,6 +68,19 @@ const userService = {
     const response = await api.delete(`/user/${userId}`);
     return response.data;
   },
+
+  /**
+   * Create a new user
+   */
+  async createUser(data: {
+    email: string;
+    password: string;
+    is_active?: boolean;
+    is_superuser?: boolean;
+  }): Promise<User> {
+    const response = await api.post(`/user/`, data);
+    return response.data;
+  },
 };
 
 export default userService;

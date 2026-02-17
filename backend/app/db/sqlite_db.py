@@ -219,6 +219,33 @@ class SQLiteDB:
             )
         """)
 
+        # Connectors table
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS connectors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                api_id INTEGER,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                config TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT,
+                FOREIGN KEY (api_id) REFERENCES apis(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Secrets table
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS secrets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                value TEXT NOT NULL,
+                description TEXT,
+                tags TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT
+            )
+        """)
+
         await self._db.commit()
         logger.debug("SQLite tables created/verified")
 
@@ -610,34 +637,69 @@ class SQLiteDB:
                     ))
                     obj.id = cursor.lastrowid
 
-            elif hasattr(obj, 'name') and hasattr(obj, 'description') and not hasattr(obj, 'version'):
-                # Role object (has name and description, but no version like API)
+            elif hasattr(obj, 'type') and hasattr(obj, 'config') and not hasattr(obj, 'version'):
+                # Connector object
                 if has_id:
                     await self._db.execute("""
-                        UPDATE roles 
-                        SET name=?, description=?, permissions=?
+                        UPDATE connectors
+                        SET api_id=?, name=?, type=?, config=?, updated_at=?
                         WHERE id=?
                     """, (
+                        getattr(obj, 'api_id', None),
                         getattr(obj, 'name', None),
-                        getattr(obj, 'description', None),
-                        json.dumps(getattr(obj, 'permissions', [])) if hasattr(
-                            obj, 'permissions') else None,
+                        getattr(obj, 'type', None),
+                        json.dumps(getattr(obj, 'config', None)) if hasattr(
+                            obj, 'config') and getattr(obj, 'config') is not None else None,
+                        datetime.utcnow().isoformat(),
                         obj.id
                     ))
                 else:
                     cursor = await self._db.execute("""
-                        INSERT INTO roles (name, description, permissions, created_at)
-                        VALUES (?, ?, ?, ?)
+                        INSERT INTO connectors (api_id, name, type, config, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
                     """, (
+                        getattr(obj, 'api_id', None),
                         getattr(obj, 'name', None),
-                        getattr(obj, 'description', None),
-                        json.dumps(getattr(obj, 'permissions', [])) if hasattr(
-                            obj, 'permissions') else None,
+                        getattr(obj, 'type', None),
+                        json.dumps(getattr(obj, 'config', None)) if hasattr(
+                            obj, 'config') and getattr(obj, 'config') is not None else None,
                         getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
-                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat()
+                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat(),
+                        getattr(obj, 'updated_at', None)
                     ))
                     obj.id = cursor.lastrowid
 
+            elif hasattr(obj, 'name') and hasattr(obj, 'value'):
+                # Secret object
+                if has_id:
+                    await self._db.execute("""
+                        UPDATE secrets
+                        SET name=?, value=?, description=?, tags=?, updated_at=?
+                        WHERE id=?
+                    """, (
+                        getattr(obj, 'name', None),
+                        getattr(obj, 'value', None),
+                        getattr(obj, 'description', None),
+                        getattr(obj, 'tags', None),
+                        datetime.utcnow().isoformat(),
+                        obj.id
+                    ))
+                else:
+                    cursor = await self._db.execute("""
+                        INSERT INTO secrets (name, value, description, tags, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        getattr(obj, 'name', None),
+                        getattr(obj, 'value', None),
+                        getattr(obj, 'description', None),
+                        getattr(obj, 'tags', None),
+                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
+                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat(),
+                        getattr(obj, 'updated_at', None)
+                    ))
+                    obj.id = cursor.lastrowid
+
+            # Permission object (has resource and action) - check before Role
             elif hasattr(obj, 'resource') and hasattr(obj, 'action') and not hasattr(obj, 'version'):
                 # Permission object (has resource and action)
                 if has_id:
@@ -661,6 +723,34 @@ class SQLiteDB:
                         getattr(obj, 'resource', None),
                         getattr(obj, 'action', None),
                         getattr(obj, 'description', None),
+                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
+                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat()
+                    ))
+                    obj.id = cursor.lastrowid
+
+            elif hasattr(obj, 'name') and hasattr(obj, 'description') and not hasattr(obj, 'version'):
+                # Role object (has name and description, but no version like API)
+                if has_id:
+                    await self._db.execute("""
+                        UPDATE roles 
+                        SET name=?, description=?, permissions=?
+                        WHERE id=?
+                    """, (
+                        getattr(obj, 'name', None),
+                        getattr(obj, 'description', None),
+                        json.dumps(getattr(obj, 'permissions', [])) if hasattr(
+                            obj, 'permissions') else None,
+                        obj.id
+                    ))
+                else:
+                    cursor = await self._db.execute("""
+                        INSERT INTO roles (name, description, permissions, created_at)
+                        VALUES (?, ?, ?, ?)
+                    """, (
+                        getattr(obj, 'name', None),
+                        getattr(obj, 'description', None),
+                        json.dumps(getattr(obj, 'permissions', [])) if hasattr(
+                            obj, 'permissions') else None,
                         getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
                             obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat()
                     ))

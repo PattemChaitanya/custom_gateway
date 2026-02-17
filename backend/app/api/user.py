@@ -1,6 +1,7 @@
 """User management API endpoints."""
 
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -13,6 +14,18 @@ from app.api.auth.auth_dependency import get_current_user
 router = APIRouter()
 
 
+# Helper function to safely convert datetime or string to ISO format
+def to_isoformat(dt) -> str:
+    """Convert datetime or string to ISO format string."""
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        return dt
+    if isinstance(dt, datetime):
+        return dt.isoformat()
+    return str(dt)
+
+
 # Pydantic schemas
 class UserResponse(BaseModel):
     """User response schema."""
@@ -23,8 +36,7 @@ class UserResponse(BaseModel):
     roles: Optional[str] = None
     created_at: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class UserWithRolesResponse(BaseModel):
@@ -38,8 +50,7 @@ class UserWithRolesResponse(BaseModel):
     permissions: List[str] = []  # List of all permissions
     created_at: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class UserUpdate(BaseModel):
@@ -47,6 +58,14 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
+
+
+class CreateUserRequest(BaseModel):
+    """Schema for creating a new user."""
+    email: EmailStr = Field(..., description="User email")
+    password: str = Field(..., min_length=8, description="Plain text password")
+    is_active: Optional[bool] = True
+    is_superuser: Optional[bool] = False
 
 
 @router.get("/", response_model=List[UserResponse])
@@ -70,7 +89,7 @@ async def list_users(
                 is_active=u.is_active if u.is_active is not None else True,
                 is_superuser=u.is_superuser if u.is_superuser is not None else False,
                 roles=u.roles,
-                created_at=u.created_at.isoformat() if u.created_at else None,
+                created_at=to_isoformat(u.created_at),
             )
             for u in users
         ]
@@ -105,7 +124,7 @@ async def get_current_user_info(
             legacy_roles=current_user.roles,
             roles=[r.name for r in roles],
             permissions=list(permissions),
-            created_at=current_user.created_at.isoformat() if current_user.created_at else None,
+            created_at=to_isoformat(current_user.created_at),
         )
 
     except Exception as e:
@@ -150,7 +169,7 @@ async def get_user(
             legacy_roles=user.roles,
             roles=[r.name for r in roles],
             permissions=list(permissions),
-            created_at=user.created_at.isoformat() if user.created_at else None,
+            created_at=to_isoformat(user.created_at),
         )
 
     except HTTPException:
@@ -202,7 +221,7 @@ async def update_user(
             is_active=user.is_active if user.is_active is not None else True,
             is_superuser=user.is_superuser if user.is_superuser is not None else False,
             roles=user.roles,
-            created_at=user.created_at.isoformat() if user.created_at else None,
+            created_at=to_isoformat(user.created_at),
         )
 
     except HTTPException:
@@ -253,4 +272,50 @@ async def delete_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete user: {str(e)}"
+        )
+
+
+@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    user_data: CreateUserRequest,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Create a new user.
+
+    Requires authentication and proper permissions.
+    """
+    from passlib.context import CryptContext
+
+    try:
+        # simple password hashing using bcrypt
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        hashed = pwd_context.hash(user_data.password)
+
+        user = User(
+            email=user_data.email,
+            hashed_password=hashed,
+            is_active=user_data.is_active if user_data.is_active is not None else True,
+            is_superuser=user_data.is_superuser if user_data.is_superuser is not None else False,
+        )
+
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+        return UserResponse(
+            id=user.id,
+            email=user.email,
+            is_active=user.is_active if user.is_active is not None else True,
+            is_superuser=user.is_superuser if user.is_superuser is not None else False,
+            roles=user.roles,
+            created_at=to_isoformat(user.created_at),
+        )
+
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create user: {str(e)}"
         )

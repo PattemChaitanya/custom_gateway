@@ -1,7 +1,7 @@
 """Role-Based Access Control (RBAC) implementation."""
 
 from typing import List, Optional, Set
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends, HTTPException, status
 from app.db.models import Role, Permission, UserRole, User
@@ -18,6 +18,13 @@ class RBACManager:
 
     def __init__(self, session: AsyncSession):
         self.session = session
+        self._resolved_session = None
+
+    async def _sess(self):
+        from app.db.session_utils import resolve_session
+        if self._resolved_session is None:
+            self._resolved_session = await resolve_session(self.session)
+        return self._resolved_session
 
     async def create_role(
         self,
@@ -34,7 +41,7 @@ class RBACManager:
         role_data = {
             "name": name,
             "description": description,
-            "permissions": permissions or [],
+            "permissions": [],
         }
 
         # Add optional fields if provided
@@ -50,12 +57,30 @@ class RBACManager:
         role = Role(**role_data)
         print(f"Creating role: {name} with permissions: {permissions}, {role}")
 
-        self.session.add(role)
-        print(f"Added role to session: {role}-1")
-        await self.session.flush()  # Flush to assign ID
-        print(f"Flushed role with ID: {role.id}")
-        await self.session.commit()
-        await self.session.refresh(role)
+        # Normalize incoming permissions to list of names/ids
+        perm_list = []
+        for p in (permissions or []):
+            if isinstance(p, str):
+                perm_list.append(p)
+            elif isinstance(p, dict):
+                if 'name' in p:
+                    perm_list.append(str(p['name']))
+                elif 'id' in p:
+                    perm_list.append(str(p['id']))
+            elif hasattr(p, 'name'):
+                perm_list.append(str(getattr(p, 'name')))
+            elif hasattr(p, 'id'):
+                perm_list.append(str(getattr(p, 'id')))
+            else:
+                perm_list.append(str(p))
+
+        role.permissions = perm_list
+
+        session = await self._sess()
+        session.add(role)
+        await session.flush()  # Flush to assign ID
+        await session.commit()
+        await session.refresh(role)
         print(f"Created role: {role} with ID: {role.id}")
 
         logger.info(f"Created role: {name}")
@@ -63,14 +88,16 @@ class RBACManager:
 
     async def get_role(self, role_id: int) -> Optional[Role]:
         """Get a role by ID."""
-        result = await self.session.execute(
+        session = await self._sess()
+        result = await session.execute(
             select(Role).where(Role.id == role_id)
         )
         return result.scalars().first()
 
     async def list_roles(self) -> List[Role]:
         """List all roles."""
-        result = await self.session.execute(select(Role))
+        session = await self._sess()
+        result = await session.execute(select(Role))
         return result.scalars().all()
 
     async def update_role(
@@ -88,8 +115,9 @@ class RBACManager:
             if hasattr(role, key) and value is not None:
                 setattr(role, key, value)
 
-        await self.session.commit()
-        await self.session.refresh(role)
+        session = await self._sess()
+        await session.commit()
+        await session.refresh(role)
 
         logger.info(f"Updated role: {role_id}")
         return role
@@ -101,8 +129,9 @@ class RBACManager:
         if not role:
             return False
 
-        await self.session.delete(role)
-        await self.session.commit()
+        session = await self._sess()
+        await session.delete(role)
+        await session.commit()
 
         logger.info(f"Deleted role: {role_id}")
         return True
@@ -110,11 +139,27 @@ class RBACManager:
     async def create_permission(
         self,
         name: str,
-        resource: str,
-        action: str,
+        resource: Optional[str] = None,
+        action: Optional[str] = None,
         description: Optional[str] = None,
     ) -> Permission:
-        """Create a new permission."""
+        """Create a new permission.
+
+        Backwards-compatible: callers may pass only `name` and `description`
+        where `name` follows the pattern "resource:action" (e.g. "api:read").
+        """
+        # If resource/action not provided try to infer from name
+        if (not resource or not action) and isinstance(name, str) and ":" in name:
+            parts = name.split(":", 1)
+            if not resource:
+                resource = parts[0]
+            if not action:
+                action = parts[1]
+
+        # Fallback defaults if still missing
+        resource = resource or "*"
+        action = action or "*"
+
         permission = Permission(
             name=name,
             resource=resource,
@@ -122,21 +167,24 @@ class RBACManager:
             description=description,
         )
 
-        self.session.add(permission)
-        await self.session.commit()
-        await self.session.refresh(permission)
+        session = await self._sess()
+        session.add(permission)
+        await session.commit()
+        await session.refresh(permission)
 
         logger.info(f"Created permission: {name}")
         return permission
 
     async def list_permissions(self) -> List[Permission]:
         """List all permissions."""
-        result = await self.session.execute(select(Permission))
+        session = await self._sess()
+        result = await session.execute(select(Permission))
         return result.scalars().all()
 
     async def get_permission(self, permission_id: int) -> Optional[Permission]:
         """Get a permission by ID."""
-        result = await self.session.execute(
+        session = await self._sess()
+        result = await session.execute(
             select(Permission).where(Permission.id == permission_id)
         )
         return result.scalars().first()
@@ -148,16 +196,160 @@ class RBACManager:
         if not permission:
             return False
 
-        await self.session.delete(permission)
-        await self.session.commit()
+        session = await self._sess()
+        await session.delete(permission)
+        await session.commit()
 
         logger.info(f"Deleted permission: {permission_id}")
+        return True
+
+    async def assign_permission_to_role(self, role_id: int, permission_identifier) -> bool:
+        """Assign a permission (by id or name) to a role.
+
+        The role stores a list of permission *names* in the JSON `permissions` column
+        so we normalize to permission.name when adding.
+        """
+        role = await self.get_role(role_id)
+        if not role:
+            return False
+
+        # Resolve permission by id, name, Permission instance, or by dict/object containing id/name
+        perm = None
+        # If caller passed a Permission instance already, use it directly
+        if hasattr(permission_identifier, 'id') and hasattr(permission_identifier, 'name'):
+            perm = permission_identifier
+        try:
+            # If caller passed a dict-like object extract id/name
+            if isinstance(permission_identifier, dict):
+                if 'id' in permission_identifier:
+                    pid = int(permission_identifier['id'])
+                    perm = await self.get_permission(pid)
+                elif 'name' in permission_identifier:
+                    pname = permission_identifier['name']
+                    session = await self._sess()
+                    res = await session.execute(select(Permission).where(Permission.name == pname))
+                    perm = res.scalars().first()
+            elif hasattr(permission_identifier, 'get'):
+                # other mapping-like
+                pid = permission_identifier.get('id')
+                pname = permission_identifier.get('name')
+                if pid is not None:
+                    perm = await self.get_permission(int(pid))
+                elif pname is not None:
+                    session = await self._sess()
+                    res = await session.execute(select(Permission).where(Permission.name == pname))
+                    perm = res.scalars().first()
+            else:
+                # numeric id
+                if isinstance(permission_identifier, int) or (isinstance(permission_identifier, str) and permission_identifier.isdigit()):
+                    pid = int(permission_identifier)
+                    perm = await self.get_permission(pid)
+                else:
+                    # lookup by name (string or object with 'name')
+                    pname = permission_identifier
+                    if not isinstance(pname, str) and hasattr(pname, 'name'):
+                        pname = getattr(pname, 'name')
+                    session = await self._sess()
+                    res = await session.execute(select(Permission).where(Permission.name == pname))
+                    perm = res.scalars().first()
+        except Exception:
+            perm = None
+
+        if not perm:
+            return False
+
+        current = list(role.permissions or [])
+        # ensure names are stored so permission checks (which expect strings) work
+        if perm.name in current:
+            return True
+
+        # assign a new list so SQLAlchemy change tracking picks up the update
+        role.permissions = current + [perm.name]
+
+        session = await self._sess()
+        await session.commit()
+        await session.refresh(role)
+
+        logger.info(
+            f"Assigned permission {perm.id} ({perm.name}) to role {role_id}")
+        return True
+
+    async def get_role_permissions(self, role_id: int) -> List[Permission]:
+        """Return list of Permission objects assigned to a role.
+
+        The role may store permission names or ids; attempt to resolve both.
+        """
+        role = await self.get_role(role_id)
+        if not role or not role.permissions:
+            return []
+
+        # Resolve all permission ids and names in a single query for reliability
+        id_list = []
+        name_list = []
+        for entry in role.permissions:
+            # Accept ints, numeric strings, dicts like {'id':..} or {'name':..}, or Permission-like objects
+            if isinstance(entry, int) or (isinstance(entry, str) and str(entry).isdigit()):
+                id_list.append(int(entry))
+            elif isinstance(entry, dict):
+                if 'id' in entry:
+                    id_list.append(int(entry['id']))
+                elif 'name' in entry:
+                    name_list.append(str(entry['name']))
+            elif hasattr(entry, 'id') and getattr(entry, 'id', None) is not None:
+                id_list.append(int(getattr(entry, 'id')))
+            elif hasattr(entry, 'name') and getattr(entry, 'name', None) is not None:
+                name_list.append(str(getattr(entry, 'name')))
+            else:
+                name_list.append(str(entry))
+
+        clauses = []
+        if id_list:
+            clauses.append(Permission.id.in_(id_list))
+        if name_list:
+            clauses.append(Permission.name.in_(name_list))
+
+        if not clauses:
+            return []
+
+        query = select(Permission).where(
+            or_(*clauses)) if len(clauses) > 1 else select(Permission).where(clauses[0])
+        session = await self._sess()
+        res = await session.execute(query)
+        return res.scalars().all()
+
+    async def remove_permission_from_role(self, role_id: int, permission_identifier) -> bool:
+        """Remove a permission (by id or name) from a role."""
+        role = await self.get_role(role_id)
+        if not role or not role.permissions:
+            return False
+
+        # build set of permission names to remove
+        to_remove_name = None
+        if isinstance(permission_identifier, int) or (isinstance(permission_identifier, str) and permission_identifier.isdigit()):
+            perm = await self.get_permission(int(permission_identifier))
+            if not perm:
+                return False
+            to_remove_name = perm.name
+        else:
+            to_remove_name = permission_identifier
+
+        current = [p for p in (role.permissions or []) if p != to_remove_name]
+        if len(current) == len(role.permissions or []):
+            return False
+
+        role.permissions = current
+        session = await self._sess()
+        await session.commit()
+        await session.refresh(role)
+
+        logger.info(f"Removed permission {to_remove_name} from role {role_id}")
         return True
 
     async def assign_role_to_user(self, user_id: int, role_id: int) -> UserRole:
         """Assign a role to a user."""
         # Check if assignment already exists
-        result = await self.session.execute(
+        session = await self._sess()
+        result = await session.execute(
             select(UserRole).where(
                 UserRole.user_id == user_id,
                 UserRole.role_id == role_id
@@ -169,16 +361,18 @@ class RBACManager:
             return existing
 
         user_role = UserRole(user_id=user_id, role_id=role_id)
-        self.session.add(user_role)
-        await self.session.commit()
-        await self.session.refresh(user_role)
+        session = await self._sess()
+        session.add(user_role)
+        await session.commit()
+        await session.refresh(user_role)
 
         logger.info(f"Assigned role {role_id} to user {user_id}")
         return user_role
 
     async def remove_role_from_user(self, user_id: int, role_id: int) -> bool:
         """Remove a role from a user."""
-        result = await self.session.execute(
+        session = await self._sess()
+        result = await session.execute(
             select(UserRole).where(
                 UserRole.user_id == user_id,
                 UserRole.role_id == role_id
@@ -189,18 +383,46 @@ class RBACManager:
         if not user_role:
             return False
 
-        await self.session.delete(user_role)
-        await self.session.commit()
+        session = await self._sess()
+        await session.delete(user_role)
+        await session.commit()
 
         logger.info(f"Removed role {role_id} from user {user_id}")
         return True
 
     async def get_user_roles(self, user_id: int) -> List[Role]:
         """Get all roles assigned to a user."""
-        result = await self.session.execute(
-            select(Role).join(UserRole).where(UserRole.user_id == user_id)
-        )
-        return result.scalars().all()
+        # SQLite fallback uses a custom session implementation that doesn't
+        # fully support SQLAlchemy joins. Detect and handle that case by
+        # querying `user_roles` first and then loading roles by id.
+        session = await self._sess()
+        try:
+            # Detect SQLiteDB by presence of `_db` attribute
+            if hasattr(session, '_db'):
+                # Get user_roles rows
+                ur = await session.execute(select(UserRole).where(UserRole.user_id == user_id))
+                user_roles = ur.scalars().all()
+                role_ids = [int(getattr(r, 'role_id')) for r in user_roles if getattr(
+                    r, 'role_id', None) is not None]
+                roles = []
+                for rid in role_ids:
+                    rres = await session.execute(select(Role).where(Role.id == rid))
+                    r = rres.scalars().first()
+                    if r:
+                        roles.append(r)
+                return roles
+            else:
+                result = await session.execute(
+                    select(Role).join(UserRole).where(
+                        UserRole.user_id == user_id)
+                )
+                return result.scalars().all()
+        except Exception:
+            # Fallback to attempted join path if custom handling fails
+            result = await session.execute(
+                select(Role).join(UserRole).where(UserRole.user_id == user_id)
+            )
+            return result.scalars().all()
 
     async def get_user_permissions(self, user_id: int) -> Set[str]:
         """Get all permissions for a user (from all their roles)."""
@@ -212,7 +434,8 @@ class RBACManager:
                 permissions.update(role.permissions)
 
         # Also check legacy roles column on User model
-        result = await self.session.execute(
+        session = await self._sess()
+        result = await session.execute(
             select(User).where(User.id == user_id)
         )
         user = result.scalars().first()

@@ -1,6 +1,7 @@
 """Connectors management router."""
 
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -12,10 +13,23 @@ from app.db.models import User
 router = APIRouter(prefix="/api/connectors", tags=["Connectors"])
 
 
+# Helper function to safely convert datetime or string to ISO format
+def to_isoformat(dt) -> str:
+    """Convert datetime or string to ISO format string."""
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        return dt
+    if isinstance(dt, datetime):
+        return dt.isoformat()
+    return str(dt)
+
+
 # Pydantic schemas
 class ConnectorCreate(BaseModel):
     """Schema for creating a connector."""
-    name: str = Field(..., min_length=1, max_length=255, description="Connector name")
+    name: str = Field(..., min_length=1, max_length=255,
+                      description="Connector name")
     type: str = Field(..., description="Connector type (postgresql, mongodb, redis, kafka, s3, azure)")
     config: dict = Field(..., description="Connector configuration")
     api_id: Optional[int] = Field(None, description="Associated API ID")
@@ -39,8 +53,7 @@ class ConnectorResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class ConnectorTestResult(BaseModel):
@@ -59,12 +72,12 @@ async def create_connector(
 ):
     """
     Create a new connector.
-    
+
     Requires authentication. Creates a connector configuration that can be used
     to connect to external services (databases, queues, storage).
     """
     manager = ConnectorManager(db)
-    
+
     try:
         connector = await manager.create_connector(
             name=connector_data.name,
@@ -72,15 +85,15 @@ async def create_connector(
             config=connector_data.config,
             api_id=connector_data.api_id,
         )
-        
+
         return ConnectorResponse(
             id=connector.id,
             name=connector.name,
             type=connector.type,
             config=connector.config,
             api_id=connector.api_id,
-            created_at=connector.created_at.isoformat() if connector.created_at else "",
-            updated_at=connector.updated_at.isoformat() if connector.updated_at else None,
+            created_at=to_isoformat(connector.created_at) or "",
+            updated_at=to_isoformat(connector.updated_at),
         )
     except Exception as e:
         raise HTTPException(
@@ -97,14 +110,14 @@ async def list_connectors(
 ):
     """
     List all connectors.
-    
+
     Optionally filter by API ID.
     """
     manager = ConnectorManager(db)
-    
+
     try:
         connectors = await manager.list_connectors(api_id=api_id)
-        
+
         return [
             ConnectorResponse(
                 id=c.id,
@@ -112,8 +125,8 @@ async def list_connectors(
                 type=c.type,
                 config=c.config,
                 api_id=c.api_id,
-                created_at=c.created_at.isoformat() if c.created_at else "",
-                updated_at=c.updated_at.isoformat() if c.updated_at else None,
+                created_at=to_isoformat(c.created_at) or "",
+                updated_at=to_isoformat(c.updated_at),
             )
             for c in connectors
         ]
@@ -132,23 +145,23 @@ async def get_connector(
 ):
     """Get a specific connector by ID."""
     manager = ConnectorManager(db)
-    
+
     connector = await manager.get_connector(connector_id)
-    
+
     if not connector:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Connector {connector_id} not found"
         )
-    
+
     return ConnectorResponse(
         id=connector.id,
         name=connector.name,
         type=connector.type,
         config=connector.config,
         api_id=connector.api_id,
-        created_at=connector.created_at.isoformat() if connector.created_at else "",
-        updated_at=connector.updated_at.isoformat() if connector.updated_at else None,
+        created_at=to_isoformat(connector.created_at) or "",
+        updated_at=to_isoformat(connector.updated_at),
     )
 
 
@@ -161,7 +174,7 @@ async def update_connector(
 ):
     """Update a connector."""
     manager = ConnectorManager(db)
-    
+
     # Build update dict
     update_data = {}
     if connector_data.name is not None:
@@ -172,23 +185,23 @@ async def update_connector(
         update_data["config"] = connector_data.config
     if connector_data.api_id is not None:
         update_data["api_id"] = connector_data.api_id
-    
+
     connector = await manager.update_connector(connector_id, **update_data)
-    
+
     if not connector:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Connector {connector_id} not found"
         )
-    
+
     return ConnectorResponse(
         id=connector.id,
         name=connector.name,
         type=connector.type,
         config=connector.config,
         api_id=connector.api_id,
-        created_at=connector.created_at.isoformat() if connector.created_at else "",
-        updated_at=connector.updated_at.isoformat() if connector.updated_at else None,
+        created_at=to_isoformat(connector.created_at) or "",
+        updated_at=to_isoformat(connector.updated_at),
     )
 
 
@@ -200,15 +213,15 @@ async def delete_connector(
 ):
     """Delete a connector."""
     manager = ConnectorManager(db)
-    
+
     success = await manager.delete_connector(connector_id)
-    
+
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Connector {connector_id} not found"
         )
-    
+
     return {"message": f"Connector {connector_id} deleted successfully"}
 
 
@@ -220,11 +233,11 @@ async def test_connector(
 ):
     """
     Test connector connection.
-    
+
     Attempts to connect to the external service and verify connectivity.
     """
     manager = ConnectorManager(db)
-    
+
     try:
         result = await manager.test_connector(connector_id)
         return ConnectorTestResult(**result)

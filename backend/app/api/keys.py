@@ -17,10 +17,13 @@ router = APIRouter(prefix="/api/keys", tags=["API Keys"])
 # Pydantic models
 class CreateAPIKeyRequest(BaseModel):
     """Request model for creating an API key."""
-    label: str = Field(..., min_length=1, max_length=100, description="Label for the API key")
-    scopes: Optional[str] = Field(None, description="Comma-separated list of scopes")
+    label: str = Field(..., min_length=1, max_length=100,
+                       description="Label for the API key")
+    scopes: Optional[str] = Field(
+        None, description="Comma-separated list of scopes")
     environment_id: Optional[int] = Field(None, description="Environment ID")
-    expires_in_days: Optional[int] = Field(365, ge=0, description="Days until expiration (0 for never)")
+    expires_in_days: Optional[int] = Field(
+        365, ge=0, description="Days until expiration (0 for never)")
     metadata: Optional[dict] = Field(None, description="Additional metadata")
 
 
@@ -36,9 +39,8 @@ class APIKeyResponse(BaseModel):
     expires_at: Optional[datetime]
     last_used_at: Optional[datetime]
     usage_count: int
-    
-    class Config:
-        from_attributes = True
+
+    model_config = {"from_attributes": True}
 
 
 class APIKeyWithSecret(APIKeyResponse):
@@ -56,12 +58,12 @@ async def create_api_key(
     try:
         api_key_manager = APIKeyManager(session)
         audit_logger = AuditLogger(session)
-        
+
         # Calculate expiration
         expires_at = None
         if request.expires_in_days and request.expires_in_days > 0:
             expires_at = datetime.utcnow() + timedelta(days=request.expires_in_days)
-        
+
         # Create API key
         api_key_obj = await api_key_manager.create_api_key(
             label=request.label,
@@ -70,7 +72,7 @@ async def create_api_key(
             expires_at=expires_at,
             metadata=request.metadata,
         )
-        
+
         # Log the action
         await audit_logger.log_event(
             action="KEY_GENERATE",
@@ -79,9 +81,9 @@ async def create_api_key(
             resource_id=str(api_key_obj.id),
             metadata_json={"label": request.label, "scopes": request.scopes},
         )
-        
+
         await session.commit()
-        
+
         # Return with the actual key (only time it's shown)
         return {
             "id": api_key_obj.id,
@@ -132,15 +134,15 @@ async def revoke_api_key(
     try:
         api_key_manager = APIKeyManager(session)
         audit_logger = AuditLogger(session)
-        
+
         success = await api_key_manager.revoke_api_key(key_id)
-        
+
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="API key not found"
             )
-        
+
         # Log the action
         await audit_logger.log_event(
             action="KEY_REVOKE",
@@ -148,7 +150,7 @@ async def revoke_api_key(
             resource_type="api_key",
             resource_id=str(key_id),
         )
-        
+
         await session.commit()
         return {"message": "API key revoked successfully"}
     except HTTPException:
@@ -171,15 +173,15 @@ async def delete_api_key(
     try:
         api_key_manager = APIKeyManager(session)
         audit_logger = AuditLogger(session)
-        
+
         success = await api_key_manager.delete_api_key(key_id)
-        
+
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="API key not found"
             )
-        
+
         # Log the action
         await audit_logger.log_event(
             action="KEY_DELETE",
@@ -187,7 +189,7 @@ async def delete_api_key(
             resource_type="api_key",
             resource_id=str(key_id),
         )
-        
+
         await session.commit()
         return {"message": "API key deleted successfully"}
     except HTTPException:
@@ -210,13 +212,13 @@ async def get_api_key_stats(
     try:
         api_key_manager = APIKeyManager(session)
         stats = await api_key_manager.get_key_stats(key_id)
-        
+
         if not stats:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="API key not found"
             )
-        
+
         return stats
     except HTTPException:
         raise
