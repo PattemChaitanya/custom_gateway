@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
 from .progress_sql import (
     build_aws_database_url,
@@ -156,11 +157,15 @@ class DatabaseManager:
                 logger.warning("PostgreSQL connection validation failed")
                 return False
 
-            # Ensure asyncpg dialect
+            # Normalize URL for asyncpg (strip sslmode, ensure dialect)
+            ssl_mode = None
             if not database_url.startswith("postgresql+asyncpg://"):
                 database_url = database_url.replace(
                     "postgresql://", "postgresql+asyncpg://", 1
                 )
+
+            database_url, ssl_mode = self._strip_sslmode_for_asyncpg(
+                database_url)
 
             # Create engine with connection pooling
             self.engine = create_async_engine(
@@ -171,7 +176,7 @@ class DatabaseManager:
                 pool_size=5,  # Number of connections to maintain
                 max_overflow=10,  # Maximum overflow connections
                 pool_recycle=3600,  # Recycle connections after 1 hour
-                connect_args=self._get_connect_args(),
+                connect_args=self._get_connect_args(ssl_mode),
             )
 
             # Test the connection
@@ -256,31 +261,78 @@ class DatabaseManager:
                 "Could not initialize any database (primary, secondary, or fallback)"
             )
 
-    def _get_connect_args(self) -> dict:
+    def _strip_sslmode_for_asyncpg(self, url: str) -> tuple[str, Optional[str]]:
+        """Remove sslmode from asyncpg URLs; asyncpg does not accept it as a kwarg."""
+        if not url.startswith("postgresql+asyncpg://") or "sslmode" not in url:
+            return url, None
+
+        parsed = make_url(url)
+        query = dict(parsed.query)
+        ssl_mode = query.pop("sslmode", None)
+        cleaned = parsed.set(query=query)
+
+        return cleaned.render_as_string(hide_password=False), ssl_mode
+
+    def _build_ssl_context(self, ssl_mode: str, sslroot: Optional[str]):
+        """Create an SSL context that mirrors libpq sslmode behaviour for asyncpg."""
+        import ssl
+
+        try:
+            if ssl_mode == "require":
+                # Encrypt connection without certificate verification (matches libpq require)
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                return ctx
+
+            if ssl_mode in ("verify-full", "verify", "verify-ca", "verify_ca"):
+                if sslroot and os.path.exists(sslroot):
+                    ctx = ssl.create_default_context(cafile=sslroot)
+                else:
+                    ctx = ssl.create_default_context()
+
+                # verify-full checks hostname, verify-ca skips hostname match
+                ctx.check_hostname = ssl_mode in ("verify-full", "verify")
+                return ctx
+        except Exception as e:
+            logger.warning(f"Failed to configure SSL context: {e}")
+
+        return None
+
+    def _get_connect_args(self, ssl_mode: Optional[str] = None) -> dict:
         """
         Get connection arguments including SSL configuration for AWS.
+
+        Args:
+            ssl_mode: Optional sslmode value extracted from the URL.
 
         Returns:
             dict: Connection arguments for SQLAlchemy engine
         """
-        import os
-        import ssl
-
         connect_args = {}
+
         # Support both AWS_SSLROOTCERT and AWS_DB_SSL_FILE_PATH
         sslroot = os.getenv("AWS_SSLROOTCERT") or os.getenv(
             "AWS_DB_SSL_FILE_PATH")
 
-        if sslroot and os.path.exists(sslroot):
-            try:
-                ssl_context = ssl.create_default_context(cafile=sslroot)
-                ssl_context.check_hostname = True
-                connect_args["ssl"] = ssl_context
-                logger.debug(
-                    f"SSL configured with root certificate: {sslroot}")
-            except Exception as e:
-                logger.warning(f"Failed to configure SSL: {e}")
+        # Resolve ssl_mode from env if not provided
+        if not ssl_mode:
+            env_ssl = os.getenv("AWS_REQUIRE_SSL", "False").lower()
+            if env_ssl in ("verify-full", "verify"):
+                ssl_mode = "verify-full"
+            elif env_ssl in ("verify-ca", "verify_ca"):
+                ssl_mode = "verify-ca"
+            elif env_ssl in ("1", "true", "yes", "require"):
+                ssl_mode = "require"
 
+        ssl_context = self._build_ssl_context(
+            ssl_mode, sslroot) if ssl_mode else None
+        if ssl_context is not None:
+            connect_args["ssl"] = ssl_context
+            logger.debug(f"SSL configured with mode '{ssl_mode}'" +
+                         (f" and root certificate: {sslroot}" if sslroot else ""))
+
+        # If caller explicitly wants no SSL, leave connect_args empty
         return connect_args
 
     async def _test_connection(self) -> bool:

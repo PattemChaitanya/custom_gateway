@@ -1,4 +1,10 @@
 """Check database configuration and connection status"""
+from app.db.progress_sql import (
+    build_aws_database_url,
+    get_database_url_from_env,
+    validate_postgres_sync,
+)
+from app.db import get_db_manager
 import os
 import asyncio
 import sys
@@ -6,20 +12,13 @@ import sys
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.db import get_db_manager
-from app.db.progress_sql import (
-    build_aws_database_url,
-    get_database_url_from_env,
-    validate_postgres_sync,
-)
-
 
 def print_env_config():
     """Print current environment configuration."""
     print("=" * 70)
     print("ENVIRONMENT CONFIGURATION")
     print("=" * 70)
-    
+
     env_vars = {
         "DATABASE_URL": os.getenv("DATABASE_URL"),
         "AWS_DB_HOST": os.getenv("AWS_DB_HOST"),
@@ -33,7 +32,7 @@ def print_env_config():
         "AWS_SECRET_NAME": os.getenv("AWS_SECRET_NAME"),
         "AWS_REGION": os.getenv("AWS_REGION"),
     }
-    
+
     for key, value in env_vars.items():
         status = "✓" if value else "✗"
         print(f"{status} {key}: {value or 'Not set'}")
@@ -44,7 +43,7 @@ def check_url_building():
     print("\n" + "=" * 70)
     print("URL BUILDING CHECK")
     print("=" * 70)
-    
+
     # Try building AWS URL
     aws_url = build_aws_database_url()
     if aws_url:
@@ -69,14 +68,14 @@ def check_url_building():
             print("    - AWS_DB_USER")
         if not os.getenv("AWS_DB_PASSWORD"):
             print("    - AWS_DB_PASSWORD")
-    
+
     # Try getting URL from environment (all methods)
     env_url = get_database_url_from_env()
     if env_url:
         print("\n✓ Database URL resolved from environment")
     else:
         print("\n✗ No database URL could be resolved")
-    
+
     return aws_url or env_url
 
 
@@ -85,20 +84,20 @@ def check_connection(url):
     print("\n" + "=" * 70)
     print("CONNECTION VALIDATION")
     print("=" * 70)
-    
+
     if not url:
         print("✗ No URL to test")
         return False
-    
+
     # Check if psycopg2 is available
     import importlib.util
     if importlib.util.find_spec("psycopg2") is None:
         print("✗ psycopg2 not available - cannot validate connection")
         print("  Install with: pip install psycopg2-binary")
         return False
-    
+
     print("✓ psycopg2 is available for validation")
-    
+
     # Try to validate connection
     print("\nAttempting connection validation...")
     try:
@@ -124,55 +123,57 @@ async def check_db_manager():
     print("\n" + "=" * 70)
     print("DATABASE MANAGER INITIALIZATION")
     print("=" * 70)
-    
+
     db_manager = get_db_manager()
-    
+
     print("\nInitializing DatabaseManager...")
-    await db_manager.initialize(echo_sql=False)
-    
+    # Allow more time for first-time table creation on remote RDS
+    await db_manager.initialize(echo_sql=False, timeout=60)
+
     # Get connection info
     info = db_manager.get_connection_info()
-    print(f"\n{'✓' if info['is_using_primary'] else '✗'} Using Primary: {info['is_using_primary']}")
+    print(
+        f"\n{'✓' if info['is_using_primary'] else '✗'} Using Primary: {info['is_using_primary']}")
     print(f"  Database Type: {info['database_type']}")
     print(f"  Has Engine: {info['has_engine']}")
     print(f"  Has Session Factory: {info['has_session_factory']}")
     print(f"  Has In-Memory DB: {info['has_inmemory_db']}")
-    
+
     # Health check
     health = await db_manager.health_check()
     print(f"\nHealth Status: {health['status'].upper()}")
     print(f"Database: {health['database']}")
     print(f"Message: {health['message']}")
-    
+
     await db_manager.shutdown()
-    
+
     return info['is_using_primary']
 
 
 async def main():
     """Main diagnostic function."""
     print("\n🔍 AWS PostgreSQL Connection Diagnostic Tool\n")
-    
+
     # Step 1: Check environment
     print_env_config()
-    
+
     # Step 2: Check URL building
     url = check_url_building()
-    
+
     # Step 3: Validate connection
     if url:
         can_connect = check_connection(url)
     else:
         can_connect = False
-    
+
     # Step 4: Check DatabaseManager
     using_primary = await check_db_manager()
-    
+
     # Summary
     print("\n" + "=" * 70)
     print("DIAGNOSTIC SUMMARY")
     print("=" * 70)
-    
+
     if using_primary:
         print("✅ AWS PostgreSQL connection is WORKING")
     else:
@@ -184,7 +185,8 @@ async def main():
         print("4. Confirm security group allows connections from your IP")
         print("5. Validate credentials are correct")
         if not can_connect:
-            print("6. Install psycopg2 for connection validation: pip install psycopg2-binary")
+            print(
+                "6. Install psycopg2 for connection validation: pip install psycopg2-binary")
 
 
 if __name__ == "__main__":
