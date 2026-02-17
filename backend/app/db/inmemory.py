@@ -5,6 +5,13 @@ Provides a simple in-memory database implementation that mimics the SQLAlchemy
 AsyncSession interface for seamless fallback when PostgreSQL is unavailable.
 """
 
+"""
+In-Memory Database Fallback
+
+Provides a simple in-memory database implementation that mimics the SQLAlchemy
+AsyncSession interface for seamless fallback when PostgreSQL is unavailable.
+"""
+
 from types import SimpleNamespace
 from typing import Dict, Optional, List, Any
 import logging
@@ -124,6 +131,7 @@ class InMemoryDB:
                     "API with same name and version already exists")
 
         # Create new API object
+        # Create new API object
         api = SimpleNamespace()
         api.id = self._next_api_id
         api.name = payload.get("name")
@@ -132,7 +140,11 @@ class InMemoryDB:
         api.owner_id = payload.get("owner_id")
         api.type = payload.get("type")
         api.resource = payload.get("resource")
+        api.type = payload.get("type")
+        api.resource = payload.get("resource")
         api.config = payload.get("config")
+        api.created_at = payload.get("created_at")
+        api.updated_at = payload.get("updated_at")
         api.created_at = payload.get("created_at")
         api.updated_at = payload.get("updated_at")
 

@@ -8,7 +8,8 @@ if (-not (Test-Path $pidFile)) {
 
 try {
     $tunnelPid = (Get-Content $pidFile).Trim()
-} catch {
+}
+catch {
     Write-Host ("Failed to read " + $pidFile) $_ -ForegroundColor Red
     exit 1
 }
@@ -18,15 +19,18 @@ try {
     if ($null -ne $proc) {
         Stop-Process -Id $tunnelPid -Force -ErrorAction Stop
         Write-Host "Tunnel stopped (PID: $tunnelPid)" -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "No process with PID $tunnelPid found. Removing stale PID file." -ForegroundColor Yellow
     }
-} catch {
+}
+catch {
     Write-Host ("Error stopping process " + $tunnelPid) $_ -ForegroundColor Red
 }
 
 try {
     Remove-Item $pidFile -ErrorAction SilentlyContinue
-} catch {
+}
+catch {
     Write-Host ("Failed to remove " + $pidFile) $_ -ForegroundColor Yellow
 }
