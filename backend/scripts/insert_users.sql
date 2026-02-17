@@ -1,4 +1,49 @@
 -- Generated INSERT statements for users
-INSERT INTO users (email, hashed_password, is_active, is_superuser, roles, created_at) VALUES ('alice@example.com', '$pbkdf2-sha256$29000$UKrVeo/RuhfivDeGcO69Vw$uL1gM3rv7S/Zow2cnrlH/vDq/ESPw23/HFzSQMVS10M', true , false , 'viewer', '2026-02-02T13:57:53.475256+00:00');
-INSERT INTO users (email, hashed_password, is_active, is_superuser, roles, created_at) VALUES ('bob@example.com', '$pbkdf2-sha256$29000$SCmlFML4XyvFmFOKUYoRYg$td2MbXfwPscwAubXAJMWUAoxUYYQQwd1kxODCZ4ws5s', true , false , 'viewer', '2026-02-02T13:57:53.475256+00:00');
-INSERT INTO users (email, hashed_password, is_active, is_superuser, roles, created_at) VALUES ('admin@example.com', '$pbkdf2-sha256$29000$KOU859zb2xuj1No7RyhlDA$BfPujRUea69NNmh6eIcXpHZ36xl3inYVnh0p9imSBso', true , true , 'admin', '2026-02-02T13:57:53.475256+00:00');
+INSERT INTO users (
+    email,
+    hashed_password,
+    is_active,
+    is_superuser,
+    roles,
+    created_at
+  )
+VALUES (
+    'alice@example.com',
+    '$pbkdf2-sha256$29000$0Fpr7T0HQIix1npPCcFYyw$2/J/Rn5btOETngoU2/SaRc8AkHmfKKaM5aKw/V7Mwwk',
+    true,
+    false,
+    'viewer',
+    '2026-02-08T19:43:31.756589+00:00'
+  );
+INSERT INTO users (
+    email,
+    hashed_password,
+    is_active,
+    is_superuser,
+    roles,
+    created_at
+  )
+VALUES (
+    'bob@example.com',
+    '$pbkdf2-sha256$29000$J8R4z3lPidHaW4vxXktpDQ$BSw3OMMWDHb5.LKPIhn/hLg0d1erFaPbto0FX893tqU',
+    true,
+    false,
+    'viewer',
+    '2026-02-08T19:43:31.756589+00:00'
+  );
+INSERT INTO users (
+    email,
+    hashed_password,
+    is_active,
+    is_superuser,
+    roles,
+    created_at
+  )
+VALUES (
+    'admin@example.com',
+    '$pbkdf2-sha256$29000$jlHKGWPs/b93bs05hxBiDA$OPXH/o4xeWqnw.RiOh2mwEG5U.Y7GhR3M1I9jT6qblI',
+    true,
+    true,
+    'admin',
+    '2026-02-08T19:43:31.756589+00:00'
+  );

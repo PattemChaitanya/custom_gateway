@@ -6,15 +6,22 @@ import { Typography, Alert } from "@mui/material";
 import "./Login.css";
 
 export default function Login() {
-  let hashedPassword = atob(localStorage.getItem('-prince') || "");
-  const [email, setEmail] = useState(atob(localStorage.getItem('-princem') || ""));
+  let hashedPassword = atob(localStorage.getItem("-prince") || "");
+  const [email, setEmail] = useState(
+    atob(localStorage.getItem("-princem") || ""),
+  );
   const [password, setPassword] = useState(hashedPassword);
   const [error, setError] = useState<string | null>(null);
-  const [remember, setRemember] = useState(localStorage.getItem('remember') === '1');
+  const [remember, setRemember] = useState(
+    localStorage.getItem("remember") === "1",
+  );
   const navigate = useNavigate();
   const setProfile = useAuthStore((s) => s.setProfile);
   const [loading, setLoading] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string;
+    password?: string;
+  }>({});
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,8 +30,10 @@ export default function Login() {
 
     // client-side validation
     const errs: { email?: string; password?: string } = {};
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errs.email = "Enter a valid email";
-    if (password.length < 6) errs.password = "Password must be at least 6 characters";
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
+      errs.email = "Enter a valid email";
+    if (password.length < 6)
+      errs.password = "Password must be at least 6 characters";
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
       return;
@@ -41,13 +50,13 @@ export default function Login() {
         setProfile({ email: js.email });
         // persist remember preference before login so token setter can persist tokens
         if (remember) {
-          localStorage.setItem('remember', '1');
-          localStorage.setItem('-princem', btoa(email));
-          localStorage.setItem('-prince', btoa(password));
+          localStorage.setItem("remember", "1");
+          localStorage.setItem("-princem", btoa(email));
+          localStorage.setItem("-prince", btoa(password));
         } else {
-          localStorage.removeItem('remember');
-          localStorage.removeItem('-princem');
-          localStorage.removeItem('-prince');
+          localStorage.removeItem("remember");
+          localStorage.removeItem("-princem");
+          localStorage.removeItem("-prince");
         }
         navigate("/dashboard");
       }
@@ -83,7 +92,9 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
-          {fieldErrors.email && <div className="error">{fieldErrors.email}</div>}
+          {fieldErrors.email && (
+            <div className="error">{fieldErrors.email}</div>
+          )}
 
           <div className="input-row">
             <span className="icon">🔒</span>
@@ -95,14 +106,26 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          {fieldErrors.password && <div className="error">{fieldErrors.password}</div>}
+          {fieldErrors.password && (
+            <div className="error">{fieldErrors.password}</div>
+          )}
 
           <div className="options">
             <label>
-              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
               <span style={{ fontSize: 13, color: "#777" }}>Remember me</span>
             </label>
-            <a href="#" onClick={(e) => { e.preventDefault(); navigate('/reset-password'); }}>
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/reset-password");
+              }}
+            >
               Forgot Password?
             </a>
           </div>
@@ -111,6 +134,33 @@ export default function Login() {
             {loading ? "Signing in…" : "Sign in"}
           </button>
         </form>
+
+        <div
+          style={{
+            marginTop: "16px",
+            textAlign: "center",
+            fontSize: "14px",
+            color: "#777",
+          }}
+        >
+          <Typography variant="body2">
+            Are you new?{" "}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/register");
+              }}
+              style={{
+                color: "#1976d2",
+                textDecoration: "none",
+                fontWeight: 500,
+              }}
+            >
+              Register here
+            </a>
+          </Typography>
+        </div>
       </div>
     </div>
   );

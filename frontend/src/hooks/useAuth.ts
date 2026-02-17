@@ -1,12 +1,21 @@
 import create from "zustand";
 
+export interface UserProfile {
+  id?: number;
+  email?: string | null;
+  is_active?: boolean;
+  is_superuser?: boolean;
+  roles?: string[];
+  permissions?: string[];
+}
+
 type AuthState = {
   accessToken: string | null;
   refreshToken: string | null;
-  profile?: { email?: string | null } | null;
+  profile?: UserProfile | null;
   setTokens: (access: string, refresh: string) => void;
   clearAuth: () => void;
-  setProfile: (p: { email?: string | null } | null) => void;
+  setProfile: (p: UserProfile | null) => void;
 };
 
 // localStorage keys

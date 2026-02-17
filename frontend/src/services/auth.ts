@@ -1,8 +1,13 @@
 import api from "./api";
 import { getAuthStore } from "../hooks/useAuth";
+import type { UserWithRoles } from "./users";
 
 export async function login(email: string, password: string) {
-  const resp = await api.post(`/auth/login`, { email, password }, { withCredentials: true });
+  const resp = await api.post(
+    `/auth/login`,
+    { email, password },
+    { withCredentials: true },
+  );
   const data = resp.data;
   if (data.access_token) {
     const store = getAuthStore();
@@ -21,12 +26,31 @@ export async function logout() {
   }
 }
 
-export async function me() {
+/**
+ * Get current authenticated user information from /auth/me endpoint.
+ * Returns comprehensive user data including roles and permissions.
+ * Used for initial authentication check in App.tsx.
+ */
+export async function me(): Promise<UserWithRoles> {
   const resp = await api.get(`/auth/me`, { withCredentials: true });
   return resp.data;
 }
 
-export async function register(email: string, password: string, meta?: { firstName?: string; lastName?: string }) {
+/**
+ * Get complete user info with roles and permissions from /auth/me endpoint.
+ * Same as me() but used in specific contexts like ProtectedRoute.
+ * Both functions call the same backend endpoint: /auth/me
+ */
+export async function getCurrentUserInfo(): Promise<UserWithRoles> {
+  const resp = await api.get(`/auth/me`);
+  return resp.data;
+}
+
+export async function register(
+  email: string,
+  password: string,
+  meta?: { firstName?: string; lastName?: string },
+) {
   const body: any = { email, password };
   if (meta) {
     if (meta.firstName) body.first_name = meta.firstName;

@@ -23,20 +23,26 @@ from .auth_schema import (
     SendCode,
 )
 from .auth_dependency import get_current_user as _get_current_user_dep, require_role
-# from .auth_dependency import 
+# from .auth_dependency import
 from .auth_service import get_user_roles, set_user_roles
 from .auth_service import list_users
 from app.db.connector import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.models import User
+from app.authorizers.rbac import RBACManager
+from sqlalchemy import select
 
 # cookie security settings (configurable via env)
-SECURE_COOKIES = os.getenv("SECURE_COOKIES", "false").lower() in ("1", "true", "yes")
+SECURE_COOKIES = os.getenv(
+    "SECURE_COOKIES", "false").lower() in ("1", "true", "yes")
 COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")  # 'lax'|'strict'|'none'
 COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN") or None
 
+
 def set_refresh_cookie(response: Response, token: str):
     # when SameSite=None, Secure must be True in modern browsers
-    samesite = COOKIE_SAMESITE if COOKIE_SAMESITE in ("lax", "strict", "none") else "lax"
+    samesite = COOKIE_SAMESITE if COOKIE_SAMESITE in (
+        "lax", "strict", "none") else "lax"
     secure = SECURE_COOKIES
     if samesite == "none":
         # ensure secure when None
@@ -52,26 +58,73 @@ def set_refresh_cookie(response: Response, token: str):
         domain=COOKIE_DOMAIN,
     )
 
+
 def clear_refresh_cookie(response: Response):
     response.delete_cookie("refresh_token", path="/", domain=COOKIE_DOMAIN)
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+
 @router.get("/")
 async def root_info():
     return {"Auth": "This is the Auth endpoint"}
 
+
 @router.get("/me")
-async def get_me(current_user: dict = Depends(_get_current_user_dep)):
-    # current_user is provided by dependency which validates the Authorization header
-    return {"message": "Current user", "email": current_user.get("email")}
+async def get_me(
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(_get_current_user_dep)
+):
+    """
+    Get comprehensive information about the currently authenticated user.
+
+    Returns user profile with roles, permissions, and account status.
+    """
+    try:
+        # Get the full user object from database
+        user_email = current_user.get("email")
+        result = await session.execute(select(User).where(User.email == user_email))
+        user = result.scalars().first()
+
+        if not user:
+            return {"error": "User not found"}
+
+        # Get roles and permissions using RBACManager
+        manager = RBACManager(session)
+        roles = await manager.get_user_roles(user.id)
+        permissions = await manager.get_user_permissions(user.id)
+
+        # Helper to convert datetime or string to ISO format
+        def to_isoformat(dt):
+            if dt is None:
+                return None
+            if isinstance(dt, str):
+                return dt
+            from datetime import datetime
+            if isinstance(dt, datetime):
+                return dt.isoformat()
+            return str(dt)
+
+        return {
+            "id": user.id,
+            "email": user.email,
+            "is_active": user.is_active,
+            "is_superuser": user.is_superuser,
+            "legacy_roles": user.roles,
+            "roles": [r.name for r in roles],
+            "permissions": list(permissions),
+            "created_at": to_isoformat(user.created_at),
+        }
+    except Exception as e:
+        return {"error": f"Failed to get user info: {str(e)}"}
 
 
 @router.get("/admin-area")
 async def admin_area(current_user: dict = Depends(require_role('admin'))):
     # example protected endpoint requiring 'admin' role (superusers bypass checks)
     return {"message": "Welcome to admin area", "email": current_user.get("email")}
+
 
 @router.post("/login")
 async def login_route(payload: UserLogin, response: Response, session: AsyncSession = Depends(get_db)):
@@ -86,6 +139,7 @@ async def login_route(payload: UserLogin, response: Response, session: AsyncSess
         set_refresh_cookie(response, refresh)
     # return both tokens in JSON for test clients; cookie still set for browsers
     return {"message": data.get("message"), "access_token": data.get("access_token"), "refresh_token": refresh}
+
 
 @router.post("/reset-password")
 async def reset_password_route(payload: PasswordReset, session: AsyncSession = Depends(get_db)):
@@ -132,6 +186,7 @@ async def send_code_route(payload: SendCode, transport: str = 'otp', session: As
     # service functions were designed around email, but accept a string identifier — pass mobile when used
     return await generate_otp(target, session)
 
+
 @router.post("/refresh-tokens")
 async def refresh_tokens_route(
     request: Request, payload: TokenRefresh | None = None, session: AsyncSession = Depends(get_db)
@@ -152,6 +207,7 @@ async def refresh_tokens_route(
         return resp
     return result
 
+
 @router.post("/logout")
 async def logout(payload: TokenRefresh | None = None, request: Request = None, response: Response = None, session: AsyncSession = Depends(get_db)):
     # support body-provided refresh_token or cookie
@@ -168,6 +224,7 @@ async def logout(payload: TokenRefresh | None = None, request: Request = None, r
     if response:
         clear_refresh_cookie(response)
     return {"message": "User logged out"}
+
 
 @router.post("/register")
 async def register_route(payload: UserRegister, session: AsyncSession = Depends(get_db)):
@@ -190,9 +247,11 @@ async def set_roles_route(email: str, payload: dict, current_user: dict = Depend
         return {"error": "missing_roles"}
     return await set_user_roles(email, roles, session)
 
+
 @router.post("/verify-email")
 async def verify_email_route(payload: EmailVerification, session: AsyncSession = Depends(get_db)):
     return await verify_email(payload.email, payload.code, session)
+
 
 @router.post("/verify-otp")
 async def verify_otp_route(payload: OTPVerification, session: AsyncSession = Depends(get_db)):
@@ -208,4 +267,3 @@ async def verify_otp_route(payload: OTPVerification, session: AsyncSession = Dep
 async def get_users_route(current_user: dict = Depends(require_role('admin')), session: AsyncSession = Depends(get_db)):
     """Admin-only endpoint that returns a list of users with basic fields."""
     return await list_users(session)
-
