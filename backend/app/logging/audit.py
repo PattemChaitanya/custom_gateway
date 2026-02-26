@@ -11,10 +11,10 @@ logger = get_logger("audit")
 
 class AuditLogger:
     """Audit logger for tracking sensitive operations."""
-    
+
     def __init__(self, session: AsyncSession):
         self.session = session
-    
+
     async def log_event(
         self,
         action: str,
@@ -27,7 +27,12 @@ class AuditLogger:
         status: str = "success",
         error_message: Optional[str] = None,
     ) -> AuditLog:
-        """Log an audit event."""
+        """Log an audit event.
+
+        Uses flush instead of commit so multiple audit writes within
+        the same request can be batched in a single transaction,
+        reducing DB round-trips under high traffic.
+        """
         audit_log = AuditLog(
             timestamp=datetime.now(timezone.utc),
             user_id=user_id,
@@ -40,11 +45,10 @@ class AuditLogger:
             status=status,
             error_message=error_message,
         )
-        
+
         self.session.add(audit_log)
-        await self.session.commit()
-        await self.session.refresh(audit_log)
-        
+        await self.session.flush()
+
         logger.info(
             f"Audit log: {action}",
             action=action,
@@ -53,9 +57,9 @@ class AuditLogger:
             user_id=user_id,
             status=status,
         )
-        
+
         return audit_log
-    
+
     async def log_api_creation(self, api_id: int, user_id: int, ip_address: str):
         """Log API creation."""
         return await self.log_event(
@@ -65,7 +69,7 @@ class AuditLogger:
             user_id=user_id,
             ip_address=ip_address,
         )
-    
+
     async def log_api_deletion(self, api_id: int, user_id: int, ip_address: str):
         """Log API deletion."""
         return await self.log_event(
@@ -75,7 +79,7 @@ class AuditLogger:
             user_id=user_id,
             ip_address=ip_address,
         )
-    
+
     async def log_key_creation(self, key_id: int, user_id: int, ip_address: str):
         """Log API key creation."""
         return await self.log_event(
@@ -85,7 +89,7 @@ class AuditLogger:
             user_id=user_id,
             ip_address=ip_address,
         )
-    
+
     async def log_key_revocation(self, key_id: int, user_id: int, ip_address: str):
         """Log API key revocation."""
         return await self.log_event(
@@ -95,7 +99,7 @@ class AuditLogger:
             user_id=user_id,
             ip_address=ip_address,
         )
-    
+
     async def log_login(self, user_id: int, ip_address: str, user_agent: str = None, success: bool = True):
         """Log login attempt."""
         action = "LOGIN_SUCCESS" if success else "LOGIN_FAILURE"
@@ -108,7 +112,7 @@ class AuditLogger:
             user_agent=user_agent,
             status="success" if success else "failure",
         )
-    
+
     async def log_permission_change(
         self,
         user_id: int,

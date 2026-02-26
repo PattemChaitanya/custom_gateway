@@ -3,6 +3,7 @@ import React, {
   useContext,
   useState,
   useMemo,
+  useCallback,
   useEffect,
 } from "react";
 import { ThemeProvider as MuiThemeProvider } from "@mui/material/styles";
@@ -36,9 +37,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     localStorage.setItem("themeMode", mode);
   }, [mode]);
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     setMode((prevMode) => (prevMode === "light" ? "dark" : "light"));
-  };
+  }, []);
 
   const theme = useMemo(() => getTheme(mode), [mode]);
 
@@ -47,7 +48,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       mode,
       toggleTheme,
     }),
-    [mode],
+    [mode, toggleTheme],
   );
 
   return (

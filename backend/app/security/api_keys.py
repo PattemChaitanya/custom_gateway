@@ -165,46 +165,63 @@ class APIKeyManager:
         return await self.verify_and_get_key(plain_key)
 
     async def verify_and_get_key(self, plain_key: str) -> Optional[APIKey]:
-        """Verify API key and return key object if valid."""
-        # Get all non-revoked keys
+        """Verify API key and return key object if valid.
+
+        Uses O(1) direct hash lookup for unsalted keys (the default).
+        Falls back to iterating only over salted keys if no direct match.
+        """
+        # Fast path: direct lookup by unsalted SHA256 hash (O(1) via DB index)
+        simple_hash = hashlib.sha256(plain_key.encode()).hexdigest()
         result = await self.session.execute(
-            select(APIKey).where(APIKey.revoked == False)
+            select(APIKey).where(
+                APIKey.key == simple_hash,
+                APIKey.revoked == False,
+            )
         )
-        keys = result.scalars().all()
+        key_obj = result.scalars().first()
 
-        # Try to verify against each key
-        for key_obj in keys:
-            if verify_api_key(plain_key, key_obj.key):
-                # Check expiration if column exists
-                if hasattr(key_obj, 'expires_at') and key_obj.expires_at:
-                    # Ensure both datetimes are timezone-aware for comparison
-                    now = datetime.now(timezone.utc)
-                    expires_at = key_obj.expires_at
-                    if expires_at.tzinfo is None:
-                        # If stored time is naive, make it aware (assume UTC)
-                        from datetime import timezone as tz
-                        expires_at = expires_at.replace(tzinfo=timezone.utc)
-                    if now > expires_at:
-                        logger.warning(
-                            f"Expired API key used: {key_obj.label}")
-                        return None
+        # Slow path: check salted keys only (keys whose stored hash contains ':')
+        if key_obj is None:
+            result = await self.session.execute(
+                select(APIKey).where(
+                    APIKey.key.contains(':'),
+                    APIKey.revoked == False,
+                )
+            )
+            salted_keys = result.scalars().all()
+            for candidate in salted_keys:
+                if verify_api_key(plain_key, candidate.key):
+                    key_obj = candidate
+                    break
 
-                # Update usage tracking if columns exist
-                if hasattr(key_obj, 'last_used_at'):
-                    await self.session.execute(
-                        update(APIKey)
-                        .where(APIKey.id == key_obj.id)
-                        .values(
-                            last_used_at=datetime.now(timezone.utc),
-                            usage_count=(
-                                APIKey.usage_count + 1) if hasattr(APIKey, 'usage_count') else None
-                        )
-                    )
-                    await self.session.commit()
+        if key_obj is None:
+            return None
 
-                return key_obj
+        # Check expiration if column exists
+        if hasattr(key_obj, 'expires_at') and key_obj.expires_at:
+            now = datetime.now(timezone.utc)
+            expires_at = key_obj.expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if now > expires_at:
+                logger.warning(
+                    f"Expired API key used: {key_obj.label}")
+                return None
 
-        return None
+        # Update usage tracking if columns exist
+        if hasattr(key_obj, 'last_used_at'):
+            await self.session.execute(
+                update(APIKey)
+                .where(APIKey.id == key_obj.id)
+                .values(
+                    last_used_at=datetime.now(timezone.utc),
+                    usage_count=(
+                        APIKey.usage_count + 1) if hasattr(APIKey, 'usage_count') else None
+                )
+            )
+            await self.session.commit()
+
+        return key_obj
 
     async def list_keys(self, environment_id: Optional[int] = None) -> list:
         """List all API keys (without showing the actual keys)."""

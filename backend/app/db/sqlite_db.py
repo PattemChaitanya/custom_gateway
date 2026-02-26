@@ -28,6 +28,18 @@ class QueryResult:
         """Return scalar results accessor."""
         return ScalarResult(self._results)
 
+    def scalar(self):
+        """Return first column of first row, or None."""
+        return self._results[0] if self._results else None
+
+    def scalar_one_or_none(self):
+        """Return first column of the only row, or None. Raise if multiple rows."""
+        if len(self._results) == 0:
+            return None
+        if len(self._results) > 1:
+            raise Exception("Multiple results found")
+        return self._results[0]
+
     def first(self):
         """Return first result or None."""
         return self._results[0] if self._results else None

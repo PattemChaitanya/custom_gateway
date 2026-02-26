@@ -1,6 +1,7 @@
 """Database connectors for various databases."""
 
 from typing import Dict, Any, Optional, List
+import asyncio
 import asyncpg
 import pymongo
 from app.logging_config import get_logger
@@ -32,8 +33,8 @@ class DatabaseConnector:
         raise NotImplementedError
 
 
-class PostgreSQLConnector(DatabaseConnector):
-    """PostgreSQL database connector."""
+class _AsyncPostgreSQLConnector(DatabaseConnector):
+    """PostgreSQL database connector (async, uses asyncpg)."""
 
     async def connect(self):
         """Connect to PostgreSQL database."""
@@ -82,8 +83,8 @@ class PostgreSQLConnector(DatabaseConnector):
             return False
 
 
-class MongoDBConnector(DatabaseConnector):
-    """MongoDB database connector."""
+class _AsyncMongoDBConnector(DatabaseConnector):
+    """MongoDB database connector (async, wraps pymongo via to_thread)."""
 
     async def connect(self):
         """Connect to MongoDB."""
@@ -100,11 +101,13 @@ class MongoDBConnector(DatabaseConnector):
                 else:
                     connection_string = f"mongodb://{host}:{port}"
 
-            self.connection = pymongo.MongoClient(connection_string)
+            self.connection = await asyncio.to_thread(
+                pymongo.MongoClient, connection_string
+            )
             self.db = self.connection[self.config["database"]]
 
             # Test connection
-            self.connection.server_info()
+            await asyncio.to_thread(self.connection.server_info)
             logger.info(f"Connected to MongoDB: {self.config['database']}")
         except Exception as e:
             logger.error(f"Failed to connect to MongoDB: {e}")
@@ -113,7 +116,7 @@ class MongoDBConnector(DatabaseConnector):
     async def disconnect(self):
         """Disconnect from MongoDB."""
         if self.connection:
-            self.connection.close()
+            await asyncio.to_thread(self.connection.close)
             logger.info("Disconnected from MongoDB")
 
     async def execute(self, operation: str, collection: str, **kwargs) -> Any:
@@ -124,13 +127,17 @@ class MongoDBConnector(DatabaseConnector):
         coll = self.db[collection]
 
         if operation == "find":
-            return list(coll.find(kwargs.get("filter", {})))
+            return await asyncio.to_thread(
+                lambda: list(coll.find(kwargs.get("filter", {})))
+            )
         elif operation == "insert_one":
-            return coll.insert_one(kwargs["document"])
+            return await asyncio.to_thread(coll.insert_one, kwargs["document"])
         elif operation == "update_one":
-            return coll.update_one(kwargs["filter"], kwargs["update"])
+            return await asyncio.to_thread(
+                coll.update_one, kwargs["filter"], kwargs["update"]
+            )
         elif operation == "delete_one":
-            return coll.delete_one(kwargs["filter"])
+            return await asyncio.to_thread(coll.delete_one, kwargs["filter"])
         else:
             raise ValueError(f"Unknown operation: {operation}")
 
@@ -139,7 +146,7 @@ class MongoDBConnector(DatabaseConnector):
         try:
             if not self.connection:
                 return False
-            self.connection.server_info()
+            await asyncio.to_thread(self.connection.server_info)
             return True
         except Exception as e:
             logger.error(f"MongoDB health check failed: {e}")
@@ -149,9 +156,9 @@ class MongoDBConnector(DatabaseConnector):
 def create_database_connector(db_type: str, config: Dict[str, Any]) -> DatabaseConnector:
     """Factory function to create database connector."""
     if db_type == "postgresql":
-        return PostgreSQLConnector(config)
+        return _AsyncPostgreSQLConnector(config)
     elif db_type == "mongodb":
-        return MongoDBConnector(config)
+        return _AsyncMongoDBConnector(config)
     else:
         raise ValueError(f"Unsupported database type: {db_type}")
 

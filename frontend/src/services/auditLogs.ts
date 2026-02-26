@@ -1,6 +1,4 @@
-import axios from "axios";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import api from "./api";
 
 export interface AuditLog {
   id: number;
@@ -33,17 +31,14 @@ export interface AuditLogStats {
 
 export const auditLogsService = {
   list: async (filters?: AuditLogFilters): Promise<AuditLog[]> => {
-    const response = await axios.get(`${API_URL}/api/audit-logs`, {
+    const response = await api.get(`/api/audit-logs`, {
       params: filters,
-      withCredentials: true,
     });
     return response.data;
   },
 
   getStatistics: async (): Promise<AuditLogStats> => {
-    const response = await axios.get(`${API_URL}/api/audit-logs/statistics`, {
-      withCredentials: true,
-    });
+    const response = await api.get(`/api/audit-logs/statistics`);
     return response.data;
   },
 
@@ -51,20 +46,15 @@ export const auditLogsService = {
     userId: number,
     days: number = 30,
   ): Promise<AuditLog[]> => {
-    const response = await axios.get(
-      `${API_URL}/api/audit-logs/user/${userId}`,
-      {
-        params: { days },
-        withCredentials: true,
-      },
-    );
+    const response = await api.get(`/api/audit-logs/user/${userId}`, {
+      params: { days },
+    });
     return response.data;
   },
 
   getFailedAttempts: async (hours: number = 24): Promise<AuditLog[]> => {
-    const response = await axios.get(`${API_URL}/api/audit-logs/failed`, {
+    const response = await api.get(`/api/audit-logs/failed`, {
       params: { hours },
-      withCredentials: true,
     });
     return response.data;
   },

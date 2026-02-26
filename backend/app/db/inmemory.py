@@ -12,9 +12,9 @@ Provides a simple in-memory database implementation that mimics the SQLAlchemy
 AsyncSession interface for seamless fallback when PostgreSQL is unavailable.
 """
 
+import logging
 from types import SimpleNamespace
 from typing import Dict, Optional, List, Any
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,18 @@ class QueryResult:
     def scalars(self):
         """Return scalar results accessor."""
         return ScalarResult(self._results)
+
+    def scalar(self):
+        """Return first column of first row, or None."""
+        return self._results[0] if self._results else None
+
+    def scalar_one_or_none(self):
+        """Return first column of the only row, or None. Raise if multiple rows."""
+        if len(self._results) == 0:
+            return None
+        if len(self._results) > 1:
+            raise Exception("Multiple results found")
+        return self._results[0]
 
     def first(self):
         """Return first result or None."""
@@ -97,6 +109,9 @@ class InMemoryDB:
         self._permissions: Dict[int, SimpleNamespace] = {}
         self._user_roles: Dict[int, SimpleNamespace] = {}
 
+        # Secondary indexes for O(1) lookups on common fields
+        self._user_email_index: Dict[str, int] = {}  # email -> user_id
+
         # ID counters
         self._next_api_id = 1
         self._next_user_id = 1
@@ -131,7 +146,6 @@ class InMemoryDB:
                     "API with same name and version already exists")
 
         # Create new API object
-        # Create new API object
         api = SimpleNamespace()
         api.id = self._next_api_id
         api.name = payload.get("name")
@@ -140,11 +154,7 @@ class InMemoryDB:
         api.owner_id = payload.get("owner_id")
         api.type = payload.get("type")
         api.resource = payload.get("resource")
-        api.type = payload.get("type")
-        api.resource = payload.get("resource")
         api.config = payload.get("config")
-        api.created_at = payload.get("created_at")
-        api.updated_at = payload.get("updated_at")
         api.created_at = payload.get("created_at")
         api.updated_at = payload.get("updated_at")
 
@@ -266,6 +276,9 @@ class InMemoryDB:
                     obj.id = self._next_user_id
                     self._next_user_id += 1
                 self._users[obj.id] = obj
+                # Maintain secondary email index
+                if hasattr(obj, 'email') and obj.email:
+                    self._user_email_index[obj.email] = obj.id
             elif 'OTP' in type_name:
                 if not hasattr(obj, 'id') or obj.id is None:
                     obj.id = self._next_otp_id
@@ -304,6 +317,9 @@ class InMemoryDB:
             if obj.id in self._apis:
                 await self.delete_api(obj)
             elif obj.id in self._users:
+                user = self._users[obj.id]
+                if hasattr(user, 'email') and user.email in self._user_email_index:
+                    del self._user_email_index[user.email]
                 del self._users[obj.id]
             elif obj.id in self._refresh_tokens:
                 del self._refresh_tokens[obj.id]
@@ -343,6 +359,10 @@ class InMemoryDB:
 
                     # Query the appropriate storage
                     if entity_type == User or entity_name == 'User':
+                        # Fast-path: check for simple email equality filter
+                        email_match = self._try_email_index_lookup(statement)
+                        if email_match is not None:
+                            return QueryResult(email_match)
                         results = list(self._users.values())
                     elif entity_type == OTP or entity_name == 'OTP':
                         results = list(self._otps.values())
@@ -404,6 +424,34 @@ class InMemoryDB:
 
         return QueryResult([])
 
+    def _try_email_index_lookup(self, statement) -> Optional[List[SimpleNamespace]]:
+        """Try to resolve a User query via the email index (O(1)).
+
+        Returns a list of matching users if the query is a simple
+        ``User.email == <value>`` filter, otherwise returns ``None`` to
+        fall back to the generic linear scan.
+        """
+        if not (hasattr(statement, '_where_criteria') and statement._where_criteria):
+            return None
+        if len(statement._where_criteria) != 1:
+            return None
+        criterion = statement._where_criteria[0]
+        try:
+            if hasattr(criterion, 'left') and hasattr(criterion, 'right'):
+                left_key = criterion.left.key if hasattr(
+                    criterion.left, 'key') else None
+                if left_key == 'email':
+                    target = criterion.right.value if hasattr(
+                        criterion.right, 'value') else None
+                    if target is not None:
+                        uid = self._user_email_index.get(target)
+                        if uid is not None and uid in self._users:
+                            return [self._users[uid]]
+                        return []
+        except Exception:
+            pass
+        return None
+
     # Utility Methods
 
     def clear_all(self) -> None:
@@ -415,6 +463,7 @@ class InMemoryDB:
         self._roles.clear()
         self._permissions.clear()
         self._user_roles.clear()
+        self._user_email_index.clear()
 
         self._next_api_id = 1
         self._next_user_id = 1

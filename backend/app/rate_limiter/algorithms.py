@@ -8,16 +8,32 @@ from app.logging_config import get_logger
 
 logger = get_logger("rate_limiter")
 
+# Module-level singleton Redis client to avoid creating new connections per call
+_redis_client: Optional[redis.Redis] = None
+_redis_url_cached: Optional[str] = None
+
 
 def get_redis_client() -> redis.Redis:
-    """Get Redis client for rate limiting."""
+    """Get a shared Redis client for rate limiting (singleton).
+
+    Returns the same client instance across calls. A new client is only
+    created when the REDIS_URL environment variable changes or on first call.
+    """
+    global _redis_client, _redis_url_cached
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+    # Reuse existing client if the URL hasn't changed
+    if _redis_client is not None and _redis_url_cached == redis_url:
+        return _redis_client
+
     try:
-        client = redis.from_url(redis_url, decode_responses=True)
-        # Try a quick ping to detect obvious connection issues early.
-        # Do not await here (sync ping) because redis.asyncio's ping is coroutine;
-        # we'll rely on runtime errors during operations and handle them gracefully.
-        return client
+        _redis_client = redis.from_url(
+            redis_url,
+            decode_responses=True,
+            max_connections=20,
+        )
+        _redis_url_cached = redis_url
+        return _redis_client
     except Exception as e:
         logger.warning(f"Redis client unavailable for rate limiter: {e}")
         return None

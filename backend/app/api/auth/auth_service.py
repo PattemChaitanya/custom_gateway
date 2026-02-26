@@ -6,7 +6,7 @@ import uuid
 from typing import Optional
 
 from app.db.models import User, RefreshToken, OTP
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -228,9 +228,9 @@ async def register_user(email: str, password: str, session: AsyncSession):
         return {"error": "user_exists"}
 
     # Check if this is the first user (will be granted admin role)
-    result = await session.execute(select(User))
-    all_users = result.scalars().all()
-    is_first_user = len(all_users) == 0
+    result = await session.execute(select(func.count(User.id)))
+    user_count = result.scalar() or 0
+    is_first_user = user_count == 0
 
     hashed = pwd_context.hash(password)
 

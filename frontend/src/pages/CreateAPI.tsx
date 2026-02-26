@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Container,
   Typography,
@@ -14,35 +14,25 @@ import {
   IconButton,
   Select,
   MenuItem,
-  Divider,
   Chip,
   List,
   ListItem,
   ListItemButton,
   ListItemText,
   Collapse,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Checkbox,
   Grid,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
 } from "@mui/material";
 import {
   Add as AddIcon,
-  Delete as DeleteIcon,
   ExpandMore as ExpandMoreIcon,
   ChevronRight as ChevronRightIcon,
-  Edit as EditIcon,
 } from "@mui/icons-material";
 import { createAPI, getAPI, updateAPI } from "../services/apis";
 import { useNavigate, useParams } from "react-router-dom";
+import ResourceDialog from "./CreateAPI/ResourceDialog";
+import MethodDialog from "./CreateAPI/MethodDialog";
+import TypeChangeDialog from "./CreateAPI/TypeChangeDialog";
+import ResourceDetailsPanel from "./CreateAPI/ResourceDetailsPanel";
 
 type Method = {
   type: string;
@@ -345,7 +335,7 @@ export default function CreateAPI() {
     setPendingType("");
   };
 
-  const openMethodDialog = () => {
+  const openMethodDialog = useCallback(() => {
     setValidationError(null);
     setEditingMethodIndex(null);
     setNewMethod({
@@ -357,14 +347,28 @@ export default function CreateAPI() {
       operationName: "",
     });
     setMethodDialogOpen(true);
-  };
+  }, [type]);
 
-  const openEditMethodDialog = (method: Method, index: number) => {
+  const openEditMethodDialog = useCallback((method: Method, index: number) => {
     setValidationError(null);
     setEditingMethodIndex(index);
     setNewMethod({ ...method });
     setMethodDialogOpen(true);
-  };
+  }, []);
+
+  const handleCloseMethodDialog = useCallback(() => {
+    setMethodDialogOpen(false);
+    setValidationError(null);
+    setEditingMethodIndex(null);
+  }, []);
+
+  const handleOpenResourceDialog = useCallback(() => {
+    setResourceDialogOpen(true);
+  }, []);
+
+  const handleCloseResourceDialog = useCallback(() => {
+    setResourceDialogOpen(false);
+  }, []);
 
   async function handleCreate(e?: React.FormEvent) {
     if (e) e.preventDefault();
@@ -706,189 +710,14 @@ export default function CreateAPI() {
 
           {/* Right: Resource Details */}
           <Grid item xs={12} md={8}>
-            <Paper sx={{ p: 2 }}>
-              {selectedResource ? (
-                <>
-                  <Box
-                    sx={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      mb: 2,
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="h6">Resource details</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Path: {selectedResource.path}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Resource ID: {selectedResource.id}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        sx={{ mr: 1 }}
-                        onClick={() => setResourceDialogOpen(true)}
-                      >
-                        Delete
-                      </Button>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        size="small"
-                        onClick={openMethodDialog}
-                      >
-                        Create method
-                      </Button>
-                    </Box>
-                  </Box>
-
-                  <Divider sx={{ my: 2 }} />
-
-                  <Box>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        mb: 1,
-                      }}
-                    >
-                      <Typography variant="subtitle1">
-                        Methods ({selectedResource.methods.length})
-                      </Typography>
-                    </Box>
-
-                    {selectedResource.methods.length === 0 ? (
-                      <Box
-                        sx={{
-                          textAlign: "center",
-                          py: 4,
-                          bgcolor: "background.default",
-                          borderRadius: 1,
-                        }}
-                      >
-                        <Typography color="text.secondary">
-                          No methods
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          No methods defined.
-                        </Typography>
-                        <Button
-                          variant="contained"
-                          startIcon={<AddIcon />}
-                          onClick={openMethodDialog}
-                          sx={{ mt: 2 }}
-                        >
-                          Create method
-                        </Button>
-                      </Box>
-                    ) : (
-                      <TableContainer>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Method type</TableCell>
-                              {type === "rest" ? (
-                                <>
-                                  <TableCell>Integration type</TableCell>
-                                  <TableCell>Authorization</TableCell>
-                                  <TableCell>API key</TableCell>
-                                </>
-                              ) : (
-                                <>
-                                  <TableCell>Operation name</TableCell>
-                                  <TableCell>Resolver URL</TableCell>
-                                </>
-                              )}
-                              <TableCell>Actions</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {selectedResource.methods.map((method, index) => (
-                              <TableRow key={index}>
-                                <TableCell>
-                                  <Chip
-                                    label={method.type}
-                                    color={
-                                      type === "rest" ? "primary" : "secondary"
-                                    }
-                                    size="small"
-                                  />
-                                </TableCell>
-                                {type === "rest" ? (
-                                  <>
-                                    <TableCell>
-                                      {method.integrationType}
-                                    </TableCell>
-                                    <TableCell>
-                                      {method.authorization}
-                                    </TableCell>
-                                    <TableCell>
-                                      {method.apiKeyRequired
-                                        ? "Required"
-                                        : "Not required"}
-                                    </TableCell>
-                                  </>
-                                ) : (
-                                  <>
-                                    <TableCell>
-                                      {method.operationName || "—"}
-                                    </TableCell>
-                                    <TableCell>
-                                      <Typography
-                                        variant="body2"
-                                        sx={{
-                                          maxWidth: 200,
-                                          overflow: "hidden",
-                                          textOverflow: "ellipsis",
-                                        }}
-                                      >
-                                        {method.integrationUrl || "—"}
-                                      </Typography>
-                                    </TableCell>
-                                  </>
-                                )}
-                                <TableCell>
-                                  <IconButton
-                                    size="small"
-                                    color="primary"
-                                    onClick={() =>
-                                      openEditMethodDialog(method, index)
-                                    }
-                                    sx={{ mr: 0.5 }}
-                                  >
-                                    <EditIcon fontSize="small" />
-                                  </IconButton>
-                                  <IconButton
-                                    size="small"
-                                    color="error"
-                                    onClick={() =>
-                                      deleteMethod(selectedResource, index)
-                                    }
-                                  >
-                                    <DeleteIcon fontSize="small" />
-                                  </IconButton>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    )}
-                  </Box>
-                </>
-              ) : (
-                <Box sx={{ textAlign: "center", py: 4 }}>
-                  <Typography color="text.secondary">
-                    Select a resource to view details
-                  </Typography>
-                </Box>
-              )}
-            </Paper>
+            <ResourceDetailsPanel
+              selectedResource={selectedResource}
+              apiType={type}
+              onOpenResourceDialog={handleOpenResourceDialog}
+              onOpenMethodDialog={openMethodDialog}
+              onEditMethod={openEditMethodDialog}
+              onDeleteMethod={deleteMethod}
+            />
 
             <Box
               sx={{
@@ -918,245 +747,34 @@ export default function CreateAPI() {
         </Grid>
       </Box>
 
-      {/* Add Resource Dialog */}
-      <Dialog
+      {/* Extracted Dialog Components */}
+      <ResourceDialog
         open={resourceDialogOpen}
-        onClose={() => setResourceDialogOpen(false)}
-      >
-        <DialogTitle>Create resource</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Resource path part (e.g., users, {id}, orders)"
-            fullWidth
-            value={newResourcePath}
-            onChange={(e) => setNewResourcePath(e.target.value)}
-            helperText={`Full path will be: ${selectedResource?.path === "/" ? "" : selectedResource?.path}/${newResourcePath}`}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setResourceDialogOpen(false)}>Cancel</Button>
-          <Button onClick={addResource} variant="contained">
-            Create
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onClose={handleCloseResourceDialog}
+        onSubmit={addResource}
+        newResourcePath={newResourcePath}
+        onPathChange={setNewResourcePath}
+        selectedResourcePath={selectedResource?.path}
+      />
 
-      {/* Add Method Dialog */}
-      <Dialog
+      <MethodDialog
         open={methodDialogOpen}
-        onClose={() => {
-          setMethodDialogOpen(false);
-          setValidationError(null);
-          setEditingMethodIndex(null);
-        }}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          {editingMethodIndex !== null ? "Edit method" : "Create method"}
-        </DialogTitle>
-        <DialogContent>
-          {validationError && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {validationError}
-            </Alert>
-          )}
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {type === "rest" ? (
-              <Select
-                value={newMethod.type}
-                onChange={(e) =>
-                  setNewMethod({ ...newMethod, type: e.target.value })
-                }
-                fullWidth
-              >
-                <MenuItem value="GET">GET</MenuItem>
-                <MenuItem value="POST">POST</MenuItem>
-                <MenuItem value="PUT">PUT</MenuItem>
-                <MenuItem value="PATCH">PATCH</MenuItem>
-                <MenuItem value="DELETE">DELETE</MenuItem>
-                <MenuItem value="ANY">ANY</MenuItem>
-              </Select>
-            ) : (
-              <Select
-                value={newMethod.type}
-                onChange={(e) =>
-                  setNewMethod({ ...newMethod, type: e.target.value })
-                }
-                fullWidth
-              >
-                <MenuItem value="QUERY">Query</MenuItem>
-                <MenuItem value="MUTATION">Mutation</MenuItem>
-                <MenuItem value="SUBSCRIPTION">Subscription</MenuItem>
-              </Select>
-            )}
+        onClose={handleCloseMethodDialog}
+        onSubmit={addMethod}
+        apiType={type}
+        method={newMethod}
+        onMethodChange={setNewMethod}
+        editingMethodIndex={editingMethodIndex}
+        validationError={validationError}
+      />
 
-            {type === "graphql" ? (
-              <>
-                <TextField
-                  label="Operation Name (required)"
-                  value={newMethod.operationName}
-                  onChange={(e) =>
-                    setNewMethod({
-                      ...newMethod,
-                      operationName: e.target.value,
-                    })
-                  }
-                  fullWidth
-                  required
-                  helperText="e.g., getUser, createPost, subscribeToMessages"
-                />
-
-                <TextField
-                  label="Resolver URL"
-                  value={newMethod.integrationUrl}
-                  onChange={(e) =>
-                    setNewMethod({
-                      ...newMethod,
-                      integrationUrl: e.target.value,
-                    })
-                  }
-                  fullWidth
-                  helperText="Backend resolver endpoint"
-                />
-
-                <TextField
-                  label="Schema Definition (optional)"
-                  multiline
-                  rows={4}
-                  value={newMethod.requestValidator}
-                  onChange={(e) =>
-                    setNewMethod({
-                      ...newMethod,
-                      requestValidator: e.target.value,
-                    })
-                  }
-                  fullWidth
-                  placeholder="type Query {\n  getUser(id: ID!): User\n}"
-                  sx={{ fontFamily: "monospace" }}
-                />
-              </>
-            ) : (
-              <>
-                <Select
-                  value={newMethod.authorization}
-                  onChange={(e) =>
-                    setNewMethod({
-                      ...newMethod,
-                      authorization: e.target.value,
-                    })
-                  }
-                  fullWidth
-                  displayEmpty
-                >
-                  <MenuItem value="NONE">None</MenuItem>
-                  <MenuItem value="API_KEY">API Key</MenuItem>
-                  <MenuItem value="JWT">JWT</MenuItem>
-                  <MenuItem value="IAM">AWS IAM</MenuItem>
-                  <MenuItem value="COGNITO">Cognito</MenuItem>
-                </Select>
-
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={newMethod.apiKeyRequired}
-                      onChange={(e) =>
-                        setNewMethod({
-                          ...newMethod,
-                          apiKeyRequired: e.target.checked,
-                        })
-                      }
-                    />
-                  }
-                  label="API key required"
-                />
-
-                <Select
-                  value={newMethod.integrationType}
-                  onChange={(e) =>
-                    setNewMethod({
-                      ...newMethod,
-                      integrationType: e.target.value,
-                    })
-                  }
-                  fullWidth
-                >
-                  <MenuItem value="HTTP">HTTP</MenuItem>
-                  <MenuItem value="LAMBDA">AWS Lambda</MenuItem>
-                  <MenuItem value="MOCK">Mock</MenuItem>
-                </Select>
-
-                {newMethod.integrationType === "HTTP" && (
-                  <TextField
-                    label="Integration URL"
-                    value={newMethod.integrationUrl}
-                    onChange={(e) =>
-                      setNewMethod({
-                        ...newMethod,
-                        integrationUrl: e.target.value,
-                      })
-                    }
-                    fullWidth
-                  />
-                )}
-
-                <TextField
-                  label="Operation name (optional)"
-                  value={newMethod.operationName}
-                  onChange={(e) =>
-                    setNewMethod({
-                      ...newMethod,
-                      operationName: e.target.value,
-                    })
-                  }
-                  fullWidth
-                />
-              </>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => {
-              setMethodDialogOpen(false);
-              setValidationError(null);
-              setEditingMethodIndex(null);
-            }}
-          >
-            Cancel
-          </Button>
-          <Button onClick={addMethod} variant="contained">
-            {editingMethodIndex !== null ? "Update" : "Create"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Type Change Confirmation Dialog */}
-      <Dialog open={typeChangeDialogOpen} onClose={cancelTypeChange}>
-        <DialogTitle>Change API Type?</DialogTitle>
-        <DialogContent>
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            Changing from {type === "rest" ? "REST" : "GraphQL"} to{" "}
-            {pendingType === "rest" ? "REST" : "GraphQL"} will delete all
-            existing resources and methods.
-          </Alert>
-          <Typography>
-            Are you sure you want to continue? This action cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={cancelTypeChange}>Cancel</Button>
-          <Button
-            onClick={confirmTypeChange}
-            variant="contained"
-            color="warning"
-          >
-            Yes, Change Type
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <TypeChangeDialog
+        open={typeChangeDialogOpen}
+        onConfirm={confirmTypeChange}
+        onCancel={cancelTypeChange}
+        currentType={type}
+        pendingType={pendingType}
+      />
     </Container>
   );
 }

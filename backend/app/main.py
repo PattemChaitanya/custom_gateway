@@ -91,20 +91,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    # Prefer explicit origin when allow_credentials=True to avoid
-    # browsers rejecting wildcard origins with credentials.
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    # Explicitly allow Authorization and common headers used by the frontend.
-    allow_headers=["Authorization", "Content-Type", "Accept",
-                   "Accept-Language", "Content-Language", "X-API-Key"],
-    max_age=600,
-)
-
-# Register middlewares
+# Register middlewares (order matters: Starlette's add_middleware uses insert(0, …)
+# so the LAST middleware added becomes the OUTERMOST in the onion.  CORS must be
+# added last so it wraps every other middleware and can always inject the
+# Access-Control-Allow-* headers — even on error responses.)
 
 register_request_logging(app)  # Request logging with header redaction
 register_validation_middleware(
@@ -113,6 +103,17 @@ register_metrics_middleware(app)  # Metrics collection
 register_rate_limit_middleware(
     app, global_limit=1000, global_window=60)  # Rate limiting
 register_authorization_middleware(app)  # Authorization
+
+# CORS — added last so it is the outermost middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type", "Accept",
+                   "Accept-Language", "Content-Language", "X-API-Key"],
+    max_age=600,
+)
 
 # Include routers
 
