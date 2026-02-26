@@ -1,8 +1,13 @@
 name: daily-cleanup
 
+# on:
+#   schedule:
+#     - cron: '0 3 * * *' # daily at 03:00 UTC
+
 on:
-  schedule:
-    - cron: '0 3 * * *' # daily at 03:00 UTC
+  push:
+    paths:
+      - "cleanup/**"
 
 jobs:
   cleanup:
@@ -14,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install dependencies
         run: |
