@@ -1,0 +1,8 @@
+{
+  "ec2_host": "ec2-13-233-153-88.ap-south-1.compute.amazonaws.com",
+  "ec2_user": "ubuntu",
+  "ec2_key": "C:\\Users\\chait\\.ssh\\API_Management.pem",
+  "rds_host": "database-1.cteiwsow8b4a.ap-south-1.rds.amazonaws.com",
+  "rds_port": 5432,
+  "local_port": 5432
+}
