@@ -1,6 +1,7 @@
 """Storage connectors for cloud storage services."""
 
 from typing import Dict, Any, Optional, BinaryIO
+import asyncio
 import boto3
 from botocore.exceptions import ClientError
 from app.logging_config import get_logger
@@ -50,7 +51,8 @@ class S3StorageConnector(StorageConnector):
     async def connect(self):
         """Connect to S3."""
         try:
-            self.client = boto3.client(
+            self.client = await asyncio.to_thread(
+                boto3.client,
                 's3',
                 aws_access_key_id=self.config.get("access_key"),
                 aws_secret_access_key=self.config.get("secret_key"),
@@ -68,7 +70,8 @@ class S3StorageConnector(StorageConnector):
             raise RuntimeError("Not connected to S3")
 
         try:
-            self.client.upload_fileobj(
+            await asyncio.to_thread(
+                self.client.upload_fileobj,
                 data, self.bucket, key, ExtraArgs=kwargs)
             logger.info(f"Uploaded {key} to S3")
         except ClientError as e:
@@ -81,8 +84,9 @@ class S3StorageConnector(StorageConnector):
             raise RuntimeError("Not connected to S3")
 
         try:
-            response = self.client.get_object(Bucket=self.bucket, Key=key)
-            return response['Body'].read()
+            response = await asyncio.to_thread(
+                self.client.get_object, Bucket=self.bucket, Key=key)
+            return await asyncio.to_thread(response['Body'].read)
         except ClientError as e:
             logger.error(f"S3 download failed: {e}")
             raise
@@ -93,7 +97,8 @@ class S3StorageConnector(StorageConnector):
             raise RuntimeError("Not connected to S3")
 
         try:
-            self.client.delete_object(Bucket=self.bucket, Key=key)
+            await asyncio.to_thread(
+                self.client.delete_object, Bucket=self.bucket, Key=key)
             logger.info(f"Deleted {key} from S3")
         except ClientError as e:
             logger.error(f"S3 delete failed: {e}")
@@ -105,11 +110,12 @@ class S3StorageConnector(StorageConnector):
             raise RuntimeError("Not connected to S3")
 
         try:
-            kwargs = {"Bucket": self.bucket}
+            kw = {"Bucket": self.bucket}
             if prefix:
-                kwargs["Prefix"] = prefix
+                kw["Prefix"] = prefix
 
-            response = self.client.list_objects_v2(**kwargs)
+            response = await asyncio.to_thread(
+                lambda: self.client.list_objects_v2(**kw))
             return [obj["Key"] for obj in response.get("Contents", [])]
         except ClientError as e:
             logger.error(f"S3 list failed: {e}")
@@ -120,7 +126,8 @@ class S3StorageConnector(StorageConnector):
         try:
             if not self.client:
                 return False
-            self.client.head_bucket(Bucket=self.bucket)
+            await asyncio.to_thread(
+                self.client.head_bucket, Bucket=self.bucket)
             return True
         except Exception as e:
             logger.error(f"S3 health check failed: {e}")

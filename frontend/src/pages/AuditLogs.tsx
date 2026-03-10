@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Box,
   Container,
@@ -49,9 +49,26 @@ export const AuditLogs: React.FC = () => {
     limit: 100,
   });
 
+  // Debounce filter changes to avoid API spam
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const debouncedLoad = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      loadLogs();
+      loadStats();
+    }, 400);
+  }, []);
+
   useEffect(() => {
-    loadLogs();
-    loadStats();
+    debouncedLoad();
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
   }, [filters]);
 
   const loadLogs = async () => {

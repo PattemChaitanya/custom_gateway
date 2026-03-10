@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
+from types import SimpleNamespace
 from .auth_service import get_current_user as _get_current_user_service
 from app.db.connector import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,11 @@ async def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials"
             )
+        # Convert dict to SimpleNamespace so both attribute and .get() access work
+        if isinstance(user, dict):
+            ns = SimpleNamespace(**user)
+            ns.get = lambda key, default=None: getattr(ns, key, default)
+            return ns
         return user
     except JWTError:
         raise HTTPException(

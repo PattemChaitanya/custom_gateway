@@ -1,6 +1,4 @@
-import axios from "axios";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import api from "./api";
 
 export interface Secret {
   id: number;
@@ -24,24 +22,20 @@ export interface CreateSecretRequest {
 
 export const secretsService = {
   list: async (tags?: string): Promise<Secret[]> => {
-    const response = await axios.get(`${API_URL}/api/secrets`, {
+    const response = await api.get(`/api/secrets/`, {
       params: { tags },
-      withCredentials: true,
     });
     return response.data;
   },
 
   create: async (data: CreateSecretRequest): Promise<Secret> => {
-    const response = await axios.post(`${API_URL}/api/secrets`, data, {
-      withCredentials: true,
-    });
+    const response = await api.post(`/api/secrets/`, data);
     return response.data;
   },
 
   get: async (name: string, decrypt: boolean = false): Promise<Secret> => {
-    const response = await axios.get(`${API_URL}/api/secrets/${name}`, {
+    const response = await api.get(`/api/secrets/${name}`, {
       params: { decrypt },
-      withCredentials: true,
     });
     return response.data;
   },
@@ -51,26 +45,21 @@ export const secretsService = {
     value: string,
     description?: string,
   ): Promise<Secret> => {
-    const response = await axios.put(
-      `${API_URL}/api/secrets/${name}`,
-      { value, description },
-      { withCredentials: true },
-    );
+    const response = await api.put(`/api/secrets/${name}`, {
+      value,
+      description,
+    });
     return response.data;
   },
 
   delete: async (name: string): Promise<void> => {
-    await axios.delete(`${API_URL}/api/secrets/${name}`, {
-      withCredentials: true,
-    });
+    await api.delete(`/api/secrets/${name}`);
   },
 
   rotate: async (name: string, newValue: string): Promise<Secret> => {
-    const response = await axios.post(
-      `${API_URL}/api/secrets/${name}/rotate`,
-      { value: newValue },
-      { withCredentials: true },
-    );
+    const response = await api.post(`/api/secrets/${name}/rotate`, {
+      value: newValue,
+    });
     return response.data;
   },
 };

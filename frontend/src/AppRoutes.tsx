@@ -1,42 +1,67 @@
 import { Routes, Route } from "react-router-dom";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import ResetPassword from "./pages/ResetPassword";
-import VerifyOtp from "./pages/VerifyOtp";
-import Dashboard from "./pages/Dashboard";
-// import APIs from "./pages/APIs";
-import APIDetail from "./pages/APIDetail";
-import RoutesPage from "./pages/Routes";
-import CreateAPI from "./pages/CreateAPI";
+import { lazy, Suspense } from "react";
+import { CircularProgress, Box } from "@mui/material";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Home from "./pages/Home";
-import { APIKeys } from "./pages/APIKeys";
-import { Secrets } from "./pages/Secrets";
-import { AuditLogs } from "./pages/AuditLogs";
-import Connectors from "./pages/Connectors";
-import Authorizers from "./pages/Authorizers";
+
+// Lazy-loaded page components for code-splitting
+const Home = lazy(() => import("./pages/Home"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const VerifyOtp = lazy(() => import("./pages/VerifyOtp"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const APIDetail = lazy(() => import("./pages/APIDetail"));
+const RoutesPage = lazy(() => import("./pages/Routes"));
+const CreateAPI = lazy(() => import("./pages/CreateAPI"));
+const APIKeys = lazy(() =>
+  import("./pages/APIKeys").then((m) => ({ default: m.APIKeys })),
+);
+const Secrets = lazy(() =>
+  import("./pages/Secrets").then((m) => ({ default: m.Secrets })),
+);
+const AuditLogs = lazy(() =>
+  import("./pages/AuditLogs").then((m) => ({ default: m.AuditLogs })),
+);
+const Connectors = lazy(() => import("./pages/Connectors"));
+const Authorizers = lazy(() => import("./pages/Authorizers"));
+const Environments = lazy(() => import("./pages/Environments"));
+
+const PageLoader = () => (
+  <Box
+    sx={{
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      height: "60vh",
+    }}
+  >
+    <CircularProgress />
+  </Box>
+);
 
 export default function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/verify-otp" element={<VerifyOtp />} />
-      <Route path="/register" element={<Register />} />
-      <Route element={<ProtectedRoute />}>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/apis" element={<RoutesPage />} />
-        <Route path="/apis/create" element={<CreateAPI />} />
-        <Route path="/apis/:id/edit" element={<CreateAPI />} />
-        <Route path="/apis/:id" element={<APIDetail />} />
-        <Route path="/api-keys" element={<APIKeys />} />
-        <Route path="/secrets" element={<Secrets />} />
-        <Route path="/audit-logs" element={<AuditLogs />} />
-        <Route path="/connectors" element={<Connectors />} />
-        <Route path="/authorizers" element={<Authorizers />} />
-        {/* <Route path="/apis/:id/routes" element={<RoutesPage />} /> */}
-      </Route>
-    </Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/verify-otp" element={<VerifyOtp />} />
+        <Route path="/register" element={<Register />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/apis" element={<RoutesPage />} />
+          <Route path="/apis/create" element={<CreateAPI />} />
+          <Route path="/apis/:id/edit" element={<CreateAPI />} />
+          <Route path="/apis/:id" element={<APIDetail />} />
+          <Route path="/api-keys" element={<APIKeys />} />
+          <Route path="/secrets" element={<Secrets />} />
+          <Route path="/audit-logs" element={<AuditLogs />} />
+          <Route path="/connectors" element={<Connectors />} />
+          <Route path="/authorizers" element={<Authorizers />} />
+          <Route path="/environments" element={<Environments />} />
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }

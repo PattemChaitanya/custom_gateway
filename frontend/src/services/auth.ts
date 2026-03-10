@@ -37,14 +37,9 @@ export async function me(): Promise<UserWithRoles> {
 }
 
 /**
- * Get complete user info with roles and permissions from /auth/me endpoint.
- * Same as me() but used in specific contexts like ProtectedRoute.
- * Both functions call the same backend endpoint: /auth/me
+ * @deprecated Use me() instead. This was a duplicate calling the same /auth/me endpoint.
  */
-export async function getCurrentUserInfo(): Promise<UserWithRoles> {
-  const resp = await api.get(`/auth/me`);
-  return resp.data;
-}
+export const getCurrentUserInfo = me;
 
 export async function register(
   email: string,

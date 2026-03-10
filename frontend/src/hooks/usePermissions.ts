@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import useAuthStore from "./useAuth";
 
 /**
@@ -36,56 +36,71 @@ export function usePermissions() {
    * Check if user has a specific permission
    * Superusers always have all permissions
    */
-  const hasPermission = (permission: string): boolean => {
-    if (isSuperuser) return true;
-    return permissions.includes(permission);
-  };
+  const hasPermission = useCallback(
+    (permission: string): boolean => {
+      if (isSuperuser) return true;
+      return permissions.includes(permission);
+    },
+    [isSuperuser, permissions],
+  );
 
   /**
    * Check if user has a specific role
    */
-  const hasRole = (role: string): boolean => {
-    if (isSuperuser && role === "admin") return true;
-    return roles.includes(role);
-  };
+  const hasRole = useCallback(
+    (role: string): boolean => {
+      if (isSuperuser && role === "admin") return true;
+      return roles.includes(role);
+    },
+    [isSuperuser, roles],
+  );
 
   /**
    * Check if user has ANY of the specified permissions
    */
-  const hasAnyPermission = (...perms: string[]): boolean => {
-    if (isSuperuser) return true;
-    return perms.some((perm) => permissions.includes(perm));
-  };
+  const hasAnyPermission = useCallback(
+    (...perms: string[]): boolean => {
+      if (isSuperuser) return true;
+      return perms.some((perm) => permissions.includes(perm));
+    },
+    [isSuperuser, permissions],
+  );
 
   /**
    * Check if user has ALL of the specified permissions
    */
-  const hasAllPermissions = (...perms: string[]): boolean => {
-    if (isSuperuser) return true;
-    return perms.every((perm) => permissions.includes(perm));
-  };
+  const hasAllPermissions = useCallback(
+    (...perms: string[]): boolean => {
+      if (isSuperuser) return true;
+      return perms.every((perm) => permissions.includes(perm));
+    },
+    [isSuperuser, permissions],
+  );
 
   /**
    * Check if user has ANY of the specified roles
    */
-  const hasAnyRole = (...rolesToCheck: string[]): boolean => {
-    if (isSuperuser && rolesToCheck.includes("admin")) return true;
-    return rolesToCheck.some((role) => roles.includes(role));
-  };
+  const hasAnyRole = useCallback(
+    (...rolesToCheck: string[]): boolean => {
+      if (isSuperuser && rolesToCheck.includes("admin")) return true;
+      return rolesToCheck.some((role) => roles.includes(role));
+    },
+    [isSuperuser, roles],
+  );
 
   /**
    * Get all user permissions
    */
-  const getPermissions = (): string[] => {
+  const getPermissions = useCallback((): string[] => {
     return permissions;
-  };
+  }, [permissions]);
 
   /**
    * Get all user roles
    */
-  const getRoles = (): string[] => {
+  const getRoles = useCallback((): string[] => {
     return roles;
-  };
+  }, [roles]);
 
   return {
     hasPermission,

@@ -15,9 +15,18 @@ logger = get_logger("connector_manager")
 class ConnectorManager:
     """Manager for connector lifecycle and operations."""
 
+    # Class-level cache shared across all instances so that connector
+    # connections survive across requests instead of being discarded
+    # every time a new ConnectorManager is instantiated per-request.
+    _active_connectors: Dict[int, Any] = {}
+
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.active_connectors = {}  # Store active connector instances
+
+    @property
+    def active_connectors(self) -> Dict[int, Any]:
+        """Access the shared class-level connector cache."""
+        return self.__class__._active_connectors
 
     async def create_connector(
         self,
@@ -74,6 +83,9 @@ class ConnectorManager:
             if hasattr(connector, key) and value is not None:
                 setattr(connector, key, value)
 
+        # Re-add to session so SQLiteDB tracks the modified object for UPDATE
+        self.session.add(connector)
+        await self.session.flush()
         await self.session.commit()
         await self.session.refresh(connector)
 

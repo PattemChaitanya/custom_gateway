@@ -4,10 +4,6 @@ import {
   Button,
   Card,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   Tab,
   Tabs,
@@ -17,28 +13,17 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TextField,
   Typography,
   Alert,
   CircularProgress,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  OutlinedInput,
-  Switch,
-  FormControlLabel,
-  Paper,
   Tooltip,
 } from "@mui/material";
-import type { SelectChangeEvent } from "@mui/material";
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
   PersonAdd as PersonAddIcon,
   Security as SecurityIcon,
-  Refresh as RefreshIcon,
 } from "@mui/icons-material";
 import authorizersService from "../services/authorizers";
 import type {
@@ -52,7 +37,14 @@ import userService, {
   type UserWithRoles,
   type UserUpdate,
 } from "../services/users";
-import usePermissions from "../hooks/usePermissions";
+import {
+  RoleDialog,
+  PermissionDialog,
+  UserEditDialog,
+  UserDetailsDialog,
+  AssignRoleDialog,
+  ConfirmDeleteDialog,
+} from "./Authorizers/index";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -75,17 +67,6 @@ function TabPanel(props: TabPanelProps) {
     </div>
   );
 }
-
-const ACTIONS = ["create", "read", "update", "delete", "execute", "list"];
-const RESOURCES = [
-  "api",
-  "user",
-  "key",
-  "secret",
-  "connector",
-  "role",
-  "permission",
-];
 
 const Authorizers: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
@@ -136,10 +117,13 @@ const Authorizers: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
-  const { hasPermission, isSuperuser } = usePermissions();
+  // Track which tabs have been loaded to avoid refetching on tab switch
+  const [loadedTabs, setLoadedTabs] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    loadData();
+    if (!loadedTabs.has(tabValue)) {
+      loadData();
+    }
   }, [tabValue]);
 
   const loadData = async () => {
@@ -159,6 +143,7 @@ const Authorizers: React.FC = () => {
         setUsers(usersData);
         setRoles(rolesData);
       }
+      setLoadedTabs((prev) => new Set(prev).add(tabValue));
       setError(null);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to load data");
@@ -351,16 +336,6 @@ const Authorizers: React.FC = () => {
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to delete user");
     }
-  };
-
-  const handlePermissionsChange = (event: SelectChangeEvent<string[]>) => {
-    const {
-      target: { value },
-    } = event;
-    setRoleFormData({
-      ...roleFormData,
-      permissions: typeof value === "string" ? value.split(",") : value,
-    });
   };
 
   return (
@@ -602,11 +577,7 @@ const Authorizers: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           {user.is_superuser ? (
-                            <Chip
-                              label="Yes"
-                              color="error"
-                              size="small"
-                            />
+                            <Chip label="Yes" color="error" size="small" />
                           ) : (
                             <Chip label="No" variant="outlined" size="small" />
                           )}
@@ -645,7 +616,9 @@ const Authorizers: React.FC = () => {
                             <IconButton
                               size="small"
                               color="secondary"
-                              onClick={() => handleOpenAssignRoleDialog(user.id)}
+                              onClick={() =>
+                                handleOpenAssignRoleDialog(user.id)
+                              }
                             >
                               <PersonAddIcon />
                             </IconButton>
@@ -674,389 +647,75 @@ const Authorizers: React.FC = () => {
       </Card>
 
       {/* Role Create/Edit Dialog */}
-      <Dialog
+      <RoleDialog
         open={roleDialogOpen}
         onClose={handleCloseRoleDialog}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>{editingRole ? "Edit Role" : "Create Role"}</DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-            <TextField
-              label="Name"
-              fullWidth
-              value={roleFormData.name}
-              onChange={(e) =>
-                setRoleFormData({ ...roleFormData, name: e.target.value })
-              }
-              required
-            />
-
-            <TextField
-              label="Description"
-              fullWidth
-              multiline
-              rows={2}
-              value={roleFormData.description}
-              onChange={(e) =>
-                setRoleFormData({
-                  ...roleFormData,
-                  description: e.target.value,
-                })
-              }
-            />
-
-            <FormControl fullWidth>
-              <InputLabel>Permissions</InputLabel>
-              <Select
-                multiple
-                value={roleFormData.permissions || []}
-                onChange={handlePermissionsChange}
-                input={<OutlinedInput label="Permissions" />}
-                renderValue={(selected) => (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    {selected.map((value) => (
-                      <Chip key={value} label={value} size="small" />
-                    ))}
-                  </Box>
-                )}
-              >
-                {permissions.map((permission) => (
-                  <MenuItem key={permission.id} value={permission.name}>
-                    {permission.name} ({permission.resource}:{permission.action}
-                    )
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseRoleDialog}>Cancel</Button>
-          <Button onClick={handleSubmitRole} variant="contained">
-            {editingRole ? "Update" : "Create"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onSubmit={handleSubmitRole}
+        editingRole={editingRole}
+        formData={roleFormData}
+        onFormDataChange={setRoleFormData}
+        permissions={permissions}
+      />
 
       {/* Permission Create Dialog */}
-      <Dialog
+      <PermissionDialog
         open={permissionDialogOpen}
         onClose={handleClosePermissionDialog}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Create Permission</DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-            <TextField
-              label="Name"
-              fullWidth
-              value={permissionFormData.name}
-              onChange={(e) =>
-                setPermissionFormData({
-                  ...permissionFormData,
-                  name: e.target.value,
-                })
-              }
-              required
-              placeholder="e.g., api:create"
-            />
-
-            <FormControl fullWidth required>
-              <InputLabel>Resource</InputLabel>
-              <Select
-                value={permissionFormData.resource}
-                onChange={(e) =>
-                  setPermissionFormData({
-                    ...permissionFormData,
-                    resource: e.target.value,
-                  })
-                }
-                label="Resource"
-              >
-                {RESOURCES.map((resource) => (
-                  <MenuItem key={resource} value={resource}>
-                    {resource}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl fullWidth required>
-              <InputLabel>Action</InputLabel>
-              <Select
-                value={permissionFormData.action}
-                onChange={(e) =>
-                  setPermissionFormData({
-                    ...permissionFormData,
-                    action: e.target.value,
-                  })
-                }
-                label="Action"
-              >
-                {ACTIONS.map((action) => (
-                  <MenuItem key={action} value={action}>
-                    {action}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <TextField
-              label="Description"
-              fullWidth
-              multiline
-              rows={2}
-              value={permissionFormData.description}
-              onChange={(e) =>
-                setPermissionFormData({
-                  ...permissionFormData,
-                  description: e.target.value,
-                })
-              }
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClosePermissionDialog}>Cancel</Button>
-          <Button onClick={handleSubmitPermission} variant="contained">
-            Create
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onSubmit={handleSubmitPermission}
+        formData={permissionFormData}
+        onFormDataChange={setPermissionFormData}
+      />
 
       {/* User Edit Dialog */}
-      <Dialog
+      <UserEditDialog
         open={editDialogOpen}
         onClose={handleCloseEditDialog}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Edit User</DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-            <TextField
-              label="Email"
-              type="email"
-              fullWidth
-              value={editFormData.email || ""}
-              onChange={(e) =>
-                setEditFormData({ ...editFormData, email: e.target.value })
-              }
-            />
-
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={editFormData.is_active ?? true}
-                  onChange={(e) =>
-                    setEditFormData({
-                      ...editFormData,
-                      is_active: e.target.checked,
-                    })
-                  }
-                />
-              }
-              label="Active"
-            />
-
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={editFormData.is_superuser ?? false}
-                  onChange={(e) =>
-                    setEditFormData({
-                      ...editFormData,
-                      is_superuser: e.target.checked,
-                    })
-                  }
-                />
-              }
-              label="Superuser"
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseEditDialog}>Cancel</Button>
-          <Button onClick={handleSubmitEdit} variant="contained">
-            Update
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onSubmit={handleSubmitEdit}
+        editingUser={editingUser}
+        formData={editFormData}
+        onFormDataChange={setEditFormData}
+      />
 
       {/* User Details Dialog */}
-      <Dialog
+      <UserDetailsDialog
         open={detailsDialogOpen}
         onClose={() => setDetailsDialogOpen(false)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>User Details</DialogTitle>
-        <DialogContent>
-          {selectedUser && (
-            <Box sx={{ pt: 2 }}>
-              <Typography variant="h6" gutterBottom>
-                {selectedUser.email}
-              </Typography>
-
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Status
-                </Typography>
-                <Typography>
-                  {selectedUser.is_active ? "Active" : "Inactive"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Superuser
-                </Typography>
-                <Typography>
-                  {selectedUser.is_superuser ? "Yes" : "No"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Roles
-                </Typography>
-                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
-                  {selectedUser.roles.length > 0 ? (
-                    selectedUser.roles.map((role, idx) => (
-                      <Chip key={idx} label={role} color="primary" />
-                    ))
-                  ) : (
-                    <Typography color="text.secondary">No roles</Typography>
-                  )}
-                </Box>
-              </Box>
-
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Permissions
-                </Typography>
-                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
-                  {selectedUser.permissions.length > 0 ? (
-                    selectedUser.permissions.map((perm, idx) => (
-                      <Chip
-                        key={idx}
-                        label={perm}
-                        size="small"
-                        variant="outlined"
-                      />
-                    ))
-                  ) : (
-                    <Typography color="text.secondary">
-                      No permissions
-                    </Typography>
-                  )}
-                </Box>
-              </Box>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDetailsDialogOpen(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+        user={selectedUser}
+      />
 
       {/* Assign Role Dialog */}
-      <Dialog
+      <AssignRoleDialog
         open={assignRoleDialogOpen}
         onClose={handleCloseAssignRoleDialog}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Assign Role to User</DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2 }}>
-            <FormControl fullWidth>
-              <InputLabel>Select Role</InputLabel>
-              <Select
-                value={selectedRoleId}
-                onChange={(e) => setSelectedRoleId(e.target.value)}
-                label="Select Role"
-              >
-                {roles.map((role) => (
-                  <MenuItem key={role.id} value={role.id}>
-                    {role.name} - {role.description}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseAssignRoleDialog}>Cancel</Button>
-          <Button onClick={handleAssignRole} variant="contained">
-            Assign
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onSubmit={handleAssignRole}
+        roles={roles}
+        selectedRoleId={selectedRoleId}
+        onSelectedRoleIdChange={setSelectedRoleId}
+      />
 
       {/* Delete Role Confirmation */}
-      <Dialog
+      <ConfirmDeleteDialog
         open={deleteRoleDialogOpen}
         onClose={() => setDeleteRoleDialogOpen(false)}
-      >
-        <DialogTitle>Confirm Delete</DialogTitle>
-        <DialogContent>
-          <Typography>Are you sure you want to delete this role?</Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteRoleDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteRole} color="error" variant="contained">
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onConfirm={handleDeleteRole}
+        message="Are you sure you want to delete this role?"
+      />
 
       {/* Delete Permission Confirmation */}
-      <Dialog
+      <ConfirmDeleteDialog
         open={deletePermissionDialogOpen}
         onClose={() => setDeletePermissionDialogOpen(false)}
-      >
-        <DialogTitle>Confirm Delete</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to delete this permission?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeletePermissionDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleDeletePermission}
-            color="error"
-            variant="contained"
-          >
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onConfirm={handleDeletePermission}
+        message="Are you sure you want to delete this permission?"
+      />
 
       {/* Delete User Confirmation */}
-      <Dialog
+      <ConfirmDeleteDialog
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}
-      >
-        <DialogTitle>Confirm Delete</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to delete user {userToDelete?.email}?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteUser} color="error" variant="contained">
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onConfirm={handleDeleteUser}
+        message={`Are you sure you want to delete user ${userToDelete?.email}?`}
+      />
     </Box>
   );
 };

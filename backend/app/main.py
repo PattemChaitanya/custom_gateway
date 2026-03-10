@@ -3,6 +3,7 @@ from app.api.admin import router as admin_router
 from app.api.authorizers import router as authorizers_router
 from app.api.connectors import router as connectors_router
 from app.api.keys import router as keys_router
+from app.api.secrets import router as secrets_router
 from app.authorizers.middleware import register_authorization_middleware
 from app.rate_limiter.middleware import register_rate_limit_middleware
 from app.metrics.middleware import register_metrics_middleware
@@ -23,6 +24,40 @@ from app.db import get_db_manager
 configure_logging(level="INFO")
 logger = get_logger("gateway")
 logger.info("Server starting")
+
+DEFAULT_ENVIRONMENTS = [
+    {"name": "Production", "slug": "production",
+        "description": "Live production environment"},
+    {"name": "Staging", "slug": "staging",
+        "description": "Pre-production staging environment"},
+    {"name": "Testing", "slug": "testing",
+        "description": "QA and testing environment"},
+    {"name": "Development", "slug": "development",
+        "description": "Local development environment"},
+]
+
+
+async def _seed_default_environments(db_manager):
+    """Seed default environments if the table is empty."""
+    from app.db.models import Environment
+    from sqlalchemy import select
+
+    async for db in db_manager.get_db():
+        try:
+            result = await db.execute(select(Environment))
+            if result.scalars().first() is not None:
+                return  # Already seeded
+
+            for env_data in DEFAULT_ENVIRONMENTS:
+                env = Environment(**env_data)
+                db.add(env)
+            await db.flush()
+            await db.commit()
+            logger.info("Seeded default environments")
+        except Exception:
+            logger.debug(
+                "Environment seeding skipped (table may not exist yet)")
+        break
 
 
 @asynccontextmanager
@@ -61,6 +96,12 @@ async def lifespan(app: FastAPI):
         logger.info(
             f"Database health: {health['status']} - {health['message']}")
 
+        # Seed default environments
+        try:
+            await _seed_default_environments(db_manager)
+        except Exception as seed_err:
+            logger.warning(f"Failed to seed default environments: {seed_err}")
+
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
         logger.warning("Attempting to use in-memory fallback")
@@ -91,20 +132,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    # Prefer explicit origin when allow_credentials=True to avoid
-    # browsers rejecting wildcard origins with credentials.
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    # Explicitly allow Authorization and common headers used by the frontend.
-    allow_headers=["Authorization", "Content-Type", "Accept",
-                   "Accept-Language", "Content-Language", "X-API-Key"],
-    max_age=600,
-)
-
-# Register middlewares
+# Register middlewares (order matters: Starlette's add_middleware uses insert(0, …)
+# so the LAST middleware added becomes the OUTERMOST in the onion.  CORS must be
+# added last so it wraps every other middleware and can always inject the
+# Access-Control-Allow-* headers — even on error responses.)
 
 register_request_logging(app)  # Request logging with header redaction
 register_validation_middleware(
@@ -114,6 +145,17 @@ register_rate_limit_middleware(
     app, global_limit=1000, global_window=60)  # Rate limiting
 register_authorization_middleware(app)  # Authorization
 
+# CORS — added last so it is the outermost middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type", "Accept",
+                   "Accept-Language", "Content-Language", "X-API-Key"],
+    max_age=600,
+)
+
 # Include routers
 
 app.include_router(user.router, prefix="/user", tags=["user"])
@@ -121,6 +163,7 @@ app.include_router(auth_router.router)
 app.include_router(apis_router)
 app.include_router(keys_router)
 app.include_router(connectors_router)
+app.include_router(secrets_router)
 app.include_router(authorizers_router)
 app.include_router(admin_router)
 
