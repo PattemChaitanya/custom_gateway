@@ -132,6 +132,9 @@ export default function Header() {
             <MenuItem onClick={handleClose} component={Link} to="/dashboard">
               Dashboard
             </MenuItem>
+            <MenuItem onClick={handleClose} component={Link} to="/environments">
+              Environments
+            </MenuItem>
             <MenuItem onClick={handleClose}>My account</MenuItem>
             <MenuItem
               onClick={async () => {

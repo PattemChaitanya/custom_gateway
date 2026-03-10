@@ -7,9 +7,9 @@ from pydantic import BaseModel, Field
 from app.db.connector import get_db
 from app.security.api_keys import APIKeyManager, get_api_key_dependency
 from app.api.auth.auth_dependency import get_current_user
-from app.db.models import User, APIKey
+from app.db.models import User, APIKey, Environment
 
-router = APIRouter(prefix="/keys", tags=["api-keys"])
+router = APIRouter(prefix="/api/keys", tags=["api-keys"])
 
 
 class CreateAPIKeyRequest(BaseModel):
@@ -89,6 +89,20 @@ async def delete_key(
         raise HTTPException(status_code=404, detail="API key not found")
 
 
+@router.get("/{key_id}/stats", status_code=status.HTTP_200_OK)
+async def get_key_stats(
+    key_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get usage statistics for an API key."""
+    manager = APIKeyManager(db)
+    stats = await manager.get_key_stats(key_id)
+    if not stats:
+        raise HTTPException(status_code=404, detail="API key not found")
+    return stats
+
+
 @router.get("/verify", status_code=status.HTTP_200_OK)
 async def verify_key(api_key: APIKey = Depends(get_api_key_dependency)):
     """Verify an API key (use X-API-Key header)."""
@@ -98,3 +112,74 @@ async def verify_key(api_key: APIKey = Depends(get_api_key_dependency)):
         "scopes": api_key.scopes,
         "environment_id": api_key.environment_id,
     }
+
+
+@router.get("/environments", status_code=status.HTTP_200_OK)
+async def list_environments(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all available environments for API key assignment."""
+    from sqlalchemy import select
+    result = await db.execute(select(Environment).order_by(Environment.name))
+    envs = result.scalars().all()
+    return [
+        {
+            "id": env.id,
+            "name": env.name,
+            "slug": getattr(env, 'slug', ''),
+            "description": getattr(env, 'description', None),
+        }
+        for env in envs
+    ]
+
+
+@router.post("/environments", status_code=status.HTTP_201_CREATED)
+async def create_environment(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new environment."""
+    from sqlalchemy import select
+    import re
+
+    name = (payload.get("name") or "").strip()
+    if not name or len(name) > 100:
+        raise HTTPException(
+            status_code=422, detail="Name is required (max 100 chars)")
+
+    slug = payload.get("slug") or re.sub(
+        r'[^a-z0-9]+', '-', name.lower()).strip('-')
+    description = payload.get("description", "")
+
+    # Check uniqueness
+    existing = await db.execute(select(Environment).where(
+        (Environment.name == name) | (Environment.slug == slug)
+    ))
+    if existing.scalars().first():
+        raise HTTPException(
+            status_code=409, detail="Environment with this name or slug already exists")
+
+    env = Environment(name=name, slug=slug, description=description)
+    db.add(env)
+    await db.flush()
+    await db.commit()
+
+    return {"id": env.id, "name": env.name, "slug": env.slug, "description": getattr(env, 'description', None)}
+
+
+@router.delete("/environments/{env_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_environment(
+    env_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete an environment."""
+    from sqlalchemy import select
+    result = await db.execute(select(Environment).where(Environment.id == env_id))
+    env = result.scalars().first()
+    if not env:
+        raise HTTPException(status_code=404, detail="Environment not found")
+    await db.delete(env)
+    await db.commit()

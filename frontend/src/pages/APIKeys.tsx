@@ -22,6 +22,10 @@ import {
   Tooltip,
   Stack,
   InputAdornment,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -31,7 +35,11 @@ import {
   Check as CheckIcon,
 } from "@mui/icons-material";
 import { apiKeysService } from "../services/apiKeys";
-import type { APIKey, CreateAPIKeyRequest } from "../services/apiKeys";
+import type {
+  APIKey,
+  CreateAPIKeyRequest,
+  Environment,
+} from "../services/apiKeys";
 
 export const APIKeys: React.FC = () => {
   const [keys, setKeys] = useState<APIKey[]>([]);
@@ -46,10 +54,21 @@ export const APIKeys: React.FC = () => {
   });
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
 
   useEffect(() => {
     loadKeys();
+    loadEnvironments();
   }, []);
+
+  const loadEnvironments = async () => {
+    try {
+      const data = await apiKeysService.listEnvironments();
+      setEnvironments(data);
+    } catch {
+      // Environments are optional — silently ignore
+    }
+  };
 
   const loadKeys = async () => {
     try {
@@ -72,7 +91,7 @@ export const APIKeys: React.FC = () => {
       setGeneratedKey(result.key);
       setSuccess("API key created successfully");
       await loadKeys();
-      setNewKeyData({ label: "", scopes: "", expires_in_days: 365 });
+      setNewKeyData({ label: "", scopes: "", expires_in_days: 7 });
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to create API key");
     } finally {
@@ -189,6 +208,7 @@ export const APIKeys: React.FC = () => {
                 <TableCell>Label</TableCell>
                 <TableCell>Key Preview</TableCell>
                 <TableCell>Scopes</TableCell>
+                <TableCell>Environment</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Created</TableCell>
                 <TableCell>Expires</TableCell>
@@ -200,7 +220,7 @@ export const APIKeys: React.FC = () => {
             <TableBody>
               {keys.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
                     <Typography variant="body2" color="text.secondary">
                       No API keys yet. Create your first API key to get started.
                     </Typography>
@@ -230,6 +250,15 @@ export const APIKeys: React.FC = () => {
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">
                         {key.scopes || "N/A"}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {key.environment_id
+                          ? (environments.find(
+                              (e) => e.id === key.environment_id,
+                            )?.name ?? `#${key.environment_id}`)
+                          : "—"}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -367,9 +396,16 @@ export const APIKeys: React.FC = () => {
                 required
                 value={newKeyData.label}
                 onChange={(e) =>
-                  setNewKeyData({ ...newKeyData, label: e.target.value })
+                  setNewKeyData({
+                    ...newKeyData,
+                    label: e.target.value.slice(0, 100),
+                  })
                 }
-                helperText="A descriptive name for this API key"
+                helperText={`A descriptive name for this API key (${newKeyData.label.length}/100)`}
+                error={
+                  newKeyData.label.length > 0 &&
+                  newKeyData.label.trim().length === 0
+                }
               />
               <TextField
                 label="Scopes"
@@ -378,20 +414,50 @@ export const APIKeys: React.FC = () => {
                 onChange={(e) =>
                   setNewKeyData({ ...newKeyData, scopes: e.target.value })
                 }
-                helperText="Comma-separated list of scopes (e.g., read, write, admin)"
+                helperText="Comma-separated list of scopes (e.g., read, write, admin). Leave empty for full access."
               />
+              {environments.length > 0 && (
+                <FormControl fullWidth>
+                  <InputLabel>Environment</InputLabel>
+                  <Select
+                    value={newKeyData.environment_id ?? ""}
+                    onChange={(e) =>
+                      setNewKeyData({
+                        ...newKeyData,
+                        environment_id:
+                          e.target.value === ""
+                            ? undefined
+                            : Number(e.target.value),
+                      })
+                    }
+                    label="Environment"
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    {environments.map((env) => (
+                      <MenuItem key={env.id} value={env.id}>
+                        {env.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
               <TextField
                 label="Expires In (Days)"
                 type="number"
                 fullWidth
-                value={newKeyData.expires_in_days}
-                onChange={(e) =>
+                value={newKeyData.expires_in_days ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
                   setNewKeyData({
                     ...newKeyData,
-                    expires_in_days: parseInt(e.target.value),
-                  })
-                }
-                helperText="Number of days until the key expires (0 for never)"
+                    expires_in_days:
+                      val === ""
+                        ? undefined
+                        : Math.min(Math.max(parseInt(val) || 1, 1), 365),
+                  });
+                }}
+                inputProps={{ min: 1, max: 365 }}
+                helperText="1–365 days. Leave empty for no expiration."
               />
             </Stack>
           )}
@@ -404,7 +470,7 @@ export const APIKeys: React.FC = () => {
             <Button
               onClick={handleCreate}
               variant="contained"
-              disabled={loading || !newKeyData.label}
+              disabled={loading || !newKeyData.label.trim()}
             >
               Generate
             </Button>

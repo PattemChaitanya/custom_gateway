@@ -12,9 +12,9 @@ Provides a simple in-memory database implementation that mimics the SQLAlchemy
 AsyncSession interface for seamless fallback when PostgreSQL is unavailable.
 """
 
+from typing import Dict, Optional, List, Any
 import logging
 from types import SimpleNamespace
-from typing import Dict, Optional, List, Any
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,10 @@ logger = logging.getLogger(__name__)
 class QueryResult:
     """Wrapper for query results to mimic SQLAlchemy Result object."""
 
-    def __init__(self, results: List[Any]):
+    def __init__(self, results: List[Any], rowcount: int = 0):
         """Initialize query result with list of objects."""
         self._results = results
+        self.rowcount = rowcount
 
     def scalars(self):
         """Return scalar results accessor."""
@@ -108,6 +109,8 @@ class InMemoryDB:
         self._roles: Dict[int, SimpleNamespace] = {}
         self._permissions: Dict[int, SimpleNamespace] = {}
         self._user_roles: Dict[int, SimpleNamespace] = {}
+        self._api_keys: Dict[int, SimpleNamespace] = {}
+        self._environments: Dict[int, SimpleNamespace] = {}
 
         # Secondary indexes for O(1) lookups on common fields
         self._user_email_index: Dict[str, int] = {}  # email -> user_id
@@ -120,6 +123,8 @@ class InMemoryDB:
         self._next_role_id = 1
         self._next_permission_id = 1
         self._next_user_role_id = 1
+        self._next_api_key_id = 1
+        self._next_environment_id = 1
 
         logger.info("In-memory database initialized")
 
@@ -304,6 +309,16 @@ class InMemoryDB:
                     obj.id = self._next_user_role_id
                     self._next_user_role_id += 1
                 self._user_roles[obj.id] = obj
+            elif 'APIKey' in type_name:
+                if not hasattr(obj, 'id') or obj.id is None:
+                    obj.id = self._next_api_key_id
+                    self._next_api_key_id += 1
+                self._api_keys[obj.id] = obj
+            elif 'Environment' in type_name:
+                if not hasattr(obj, 'id') or obj.id is None:
+                    obj.id = self._next_environment_id
+                    self._next_environment_id += 1
+                self._environments[obj.id] = obj
 
     async def delete(self, obj: SimpleNamespace) -> None:
         """
@@ -331,6 +346,10 @@ class InMemoryDB:
                 del self._permissions[obj.id]
             elif obj.id in self._user_roles:
                 del self._user_roles[obj.id]
+            elif obj.id in self._api_keys:
+                del self._api_keys[obj.id]
+            elif obj.id in self._environments:
+                del self._environments[obj.id]
 
     async def execute(self, statement):
         """
@@ -343,7 +362,63 @@ class InMemoryDB:
             QueryResult: Object with scalars() method for result access
         """
         # Simple implementation to handle basic select queries
-        from app.db.models import User, OTP, RefreshToken, Role, Permission, UserRole
+        from app.db.models import User, OTP, RefreshToken, Role, Permission, UserRole, APIKey, Environment
+
+        # Handle UPDATE statements (e.g. update(APIKey).where(...).values(...))
+        if hasattr(statement, 'entity_description') and not hasattr(statement, 'column_descriptions'):
+            try:
+                entity_type = statement.entity_description.get('entity', None)
+                storage_map = {
+                    User: self._users,
+                    OTP: self._otps,
+                    RefreshToken: self._refresh_tokens,
+                    Role: self._roles,
+                    Permission: self._permissions,
+                    UserRole: self._user_roles,
+                    APIKey: self._api_keys,
+                    Environment: self._environments,
+                }
+                storage = storage_map.get(entity_type)
+                if not storage:
+                    return QueryResult([], rowcount=0)
+
+                # Get values to set
+                update_vals = {}
+                if hasattr(statement, '_values') and statement._values:
+                    for col_clause, bind_param in statement._values.items():
+                        col_name = col_clause.key if hasattr(
+                            col_clause, 'key') else str(col_clause)
+                        val = bind_param.value if hasattr(
+                            bind_param, 'value') else bind_param
+                        update_vals[col_name] = val
+
+                if not update_vals:
+                    return QueryResult([], rowcount=0)
+
+                # Find matching objects via WHERE criteria
+                targets = list(storage.values())
+                if hasattr(statement, '_where_criteria') and statement._where_criteria:
+                    for criterion in statement._where_criteria:
+                        try:
+                            if hasattr(criterion, 'left') and hasattr(criterion, 'right'):
+                                left_val = criterion.left.key if hasattr(
+                                    criterion.left, 'key') else str(criterion.left)
+                                right_val = criterion.right.value if hasattr(
+                                    criterion.right, 'value') else criterion.right
+                                targets = [o for o in targets if getattr(
+                                    o, left_val, None) == right_val]
+                        except Exception:
+                            pass
+
+                # Apply updates
+                for obj in targets:
+                    for k, v in update_vals.items():
+                        setattr(obj, k, v)
+
+                return QueryResult([], rowcount=len(targets))
+            except Exception as e:
+                logger.warning(f"UPDATE execution error: {e}")
+                return QueryResult([], rowcount=0)
 
         # Determine which model is being queried
         if hasattr(statement, '_propagate_attrs') and hasattr(statement, 'column_descriptions'):
@@ -374,6 +449,10 @@ class InMemoryDB:
                         results = list(self._permissions.values())
                     elif entity_type == UserRole or entity_name == 'UserRole':
                         results = list(self._user_roles.values())
+                    elif entity_type == APIKey or entity_name == 'APIKey':
+                        results = list(self._api_keys.values())
+                    elif entity_type == Environment or entity_name == 'Environment':
+                        results = list(self._environments.values())
                     else:
                         results = []
 
@@ -463,12 +542,16 @@ class InMemoryDB:
         self._roles.clear()
         self._permissions.clear()
         self._user_roles.clear()
+        self._api_keys.clear()
+        self._environments.clear()
         self._user_email_index.clear()
 
         self._next_api_id = 1
         self._next_user_id = 1
         self._next_token_id = 1
         self._next_otp_id = 1
+        self._next_api_key_id = 1
+        self._next_environment_id = 1
 
         logger.info("In-memory database cleared")
 
@@ -484,6 +567,8 @@ class InMemoryDB:
             "users": len(self._users),
             "refresh_tokens": len(self._refresh_tokens),
             "otps": len(self._otps),
+            "api_keys": len(self._api_keys),
+            "environments": len(self._environments),
         }
 
     def __repr__(self) -> str:

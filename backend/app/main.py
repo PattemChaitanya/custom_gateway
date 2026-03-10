@@ -3,6 +3,7 @@ from app.api.admin import router as admin_router
 from app.api.authorizers import router as authorizers_router
 from app.api.connectors import router as connectors_router
 from app.api.keys import router as keys_router
+from app.api.secrets import router as secrets_router
 from app.authorizers.middleware import register_authorization_middleware
 from app.rate_limiter.middleware import register_rate_limit_middleware
 from app.metrics.middleware import register_metrics_middleware
@@ -23,6 +24,40 @@ from app.db import get_db_manager
 configure_logging(level="INFO")
 logger = get_logger("gateway")
 logger.info("Server starting")
+
+DEFAULT_ENVIRONMENTS = [
+    {"name": "Production", "slug": "production",
+        "description": "Live production environment"},
+    {"name": "Staging", "slug": "staging",
+        "description": "Pre-production staging environment"},
+    {"name": "Testing", "slug": "testing",
+        "description": "QA and testing environment"},
+    {"name": "Development", "slug": "development",
+        "description": "Local development environment"},
+]
+
+
+async def _seed_default_environments(db_manager):
+    """Seed default environments if the table is empty."""
+    from app.db.models import Environment
+    from sqlalchemy import select
+
+    async for db in db_manager.get_db():
+        try:
+            result = await db.execute(select(Environment))
+            if result.scalars().first() is not None:
+                return  # Already seeded
+
+            for env_data in DEFAULT_ENVIRONMENTS:
+                env = Environment(**env_data)
+                db.add(env)
+            await db.flush()
+            await db.commit()
+            logger.info("Seeded default environments")
+        except Exception:
+            logger.debug(
+                "Environment seeding skipped (table may not exist yet)")
+        break
 
 
 @asynccontextmanager
@@ -60,6 +95,12 @@ async def lifespan(app: FastAPI):
         health = await db_manager.health_check()
         logger.info(
             f"Database health: {health['status']} - {health['message']}")
+
+        # Seed default environments
+        try:
+            await _seed_default_environments(db_manager)
+        except Exception as seed_err:
+            logger.warning(f"Failed to seed default environments: {seed_err}")
 
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
@@ -122,6 +163,7 @@ app.include_router(auth_router.router)
 app.include_router(apis_router)
 app.include_router(keys_router)
 app.include_router(connectors_router)
+app.include_router(secrets_router)
 app.include_router(authorizers_router)
 app.include_router(admin_router)
 

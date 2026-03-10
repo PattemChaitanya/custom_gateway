@@ -22,14 +22,14 @@ export interface CreateSecretRequest {
 
 export const secretsService = {
   list: async (tags?: string): Promise<Secret[]> => {
-    const response = await api.get(`/api/secrets`, {
+    const response = await api.get(`/api/secrets/`, {
       params: { tags },
     });
     return response.data;
   },
 
   create: async (data: CreateSecretRequest): Promise<Secret> => {
-    const response = await api.post(`/api/secrets`, data);
+    const response = await api.post(`/api/secrets/`, data);
     return response.data;
   },
 

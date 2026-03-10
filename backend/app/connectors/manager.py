@@ -83,6 +83,9 @@ class ConnectorManager:
             if hasattr(connector, key) and value is not None:
                 setattr(connector, key, value)
 
+        # Re-add to session so SQLiteDB tracks the modified object for UPDATE
+        self.session.add(connector)
+        await self.session.flush()
         await self.session.commit()
         await self.session.refresh(connector)
 

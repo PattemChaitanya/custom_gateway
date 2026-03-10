@@ -24,6 +24,7 @@ const AuditLogs = lazy(() =>
 );
 const Connectors = lazy(() => import("./pages/Connectors"));
 const Authorizers = lazy(() => import("./pages/Authorizers"));
+const Environments = lazy(() => import("./pages/Environments"));
 
 const PageLoader = () => (
   <Box
@@ -58,6 +59,7 @@ export default function AppRoutes() {
           <Route path="/audit-logs" element={<AuditLogs />} />
           <Route path="/connectors" element={<Connectors />} />
           <Route path="/authorizers" element={<Authorizers />} />
+          <Route path="/environments" element={<Environments />} />
         </Route>
       </Routes>
     </Suspense>

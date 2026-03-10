@@ -549,7 +549,13 @@ async def get_current_user(token: str, session: AsyncSession) -> Optional[dict]:
         roles = (user.roles or '') if hasattr(user, 'roles') else ''
         roles = ','.join(r.strip().lower()
                          for r in roles.split(',') if r.strip())
-        return {"email": user.email, "roles": roles, "is_superuser": bool(getattr(user, 'is_superuser', False))}
+        return {
+            "id": getattr(user, 'id', None),
+            "email": user.email,
+            "roles": roles,
+            "is_superuser": bool(getattr(user, 'is_superuser', False)),
+            "is_active": bool(getattr(user, 'is_active', True)),
+        }
     except Exception:
         return None
 

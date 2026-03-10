@@ -111,20 +111,30 @@ async def get_current_user_info(
     Includes roles and permissions.
     """
     try:
+        # Fetch full user object from DB for complete fields (created_at, etc.)
+        result = await session.execute(select(User).where(User.id == current_user.id))
+        user = result.scalars().first() or result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
         # Get roles and permissions
         manager = RBACManager(session)
-        roles = await manager.get_user_roles(current_user.id)
-        permissions = await manager.get_user_permissions(current_user.id)
+        roles = await manager.get_user_roles(user.id)
+        permissions = await manager.get_user_permissions(user.id)
 
         return UserWithRolesResponse(
-            id=current_user.id,
-            email=current_user.email,
-            is_active=current_user.is_active,
-            is_superuser=current_user.is_superuser,
-            legacy_roles=current_user.roles,
+            id=user.id,
+            email=user.email,
+            is_active=getattr(user, 'is_active', True),
+            is_superuser=getattr(user, 'is_superuser', False),
+            legacy_roles=getattr(user, 'roles', ''),
             roles=[r.name for r in roles],
             permissions=list(permissions),
-            created_at=to_isoformat(current_user.created_at),
+            created_at=to_isoformat(getattr(user, 'created_at', None)),
         )
 
     except Exception as e:

@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 class QueryResult:
     """Wrapper for query results to mimic SQLAlchemy Result object."""
 
-    def __init__(self, results: List[Any]):
+    def __init__(self, results: List[Any], rowcount: int = 0):
         """Initialize query result with list of objects."""
         self._results = results
+        self.rowcount = rowcount
 
     def scalars(self):
         """Return scalar results accessor."""
@@ -258,6 +259,35 @@ class SQLiteDB:
             )
         """)
 
+        # API Keys table
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT UNIQUE NOT NULL,
+                label TEXT,
+                scopes TEXT,
+                revoked INTEGER DEFAULT 0,
+                environment_id INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                expires_at TEXT,
+                last_used_at TEXT,
+                usage_count INTEGER DEFAULT 0,
+                metadata TEXT
+            )
+        """)
+
+        # Environments table
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS environments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                slug TEXT UNIQUE NOT NULL,
+                description TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT
+            )
+        """)
+
         await self._db.commit()
         logger.debug("SQLite tables created/verified")
 
@@ -270,7 +300,7 @@ class SQLiteDB:
         for key in row.keys():
             value = row[key]
             # Handle JSON columns
-            if key in ('config', 'resource', 'permissions') and value:
+            if key in ('config', 'resource', 'permissions', 'metadata') and value:
                 try:
                     value = json.loads(value) if isinstance(
                         value, str) else value
@@ -462,6 +492,22 @@ class SQLiteDB:
         elif hasattr(obj, 'name') and hasattr(obj, 'version'):
             # API object
             cursor = await self._db.execute("SELECT * FROM apis WHERE id = ?", (obj.id,))
+            row = await cursor.fetchone()
+            if row:
+                refreshed = self._row_to_namespace(row)
+                for key in row.keys():
+                    setattr(obj, key, getattr(refreshed, key))
+        elif hasattr(obj, 'value') and hasattr(obj, 'name') and not hasattr(obj, 'version'):
+            # Secret object
+            cursor = await self._db.execute("SELECT * FROM secrets WHERE id = ?", (obj.id,))
+            row = await cursor.fetchone()
+            if row:
+                refreshed = self._row_to_namespace(row)
+                for key in row.keys():
+                    setattr(obj, key, getattr(refreshed, key))
+        elif hasattr(obj, 'config') and hasattr(obj, 'type') and hasattr(obj, 'api_id'):
+            # Connector object
+            cursor = await self._db.execute("SELECT * FROM connectors WHERE id = ?", (obj.id,))
             row = await cursor.fetchone()
             if row:
                 refreshed = self._row_to_namespace(row)
@@ -791,6 +837,79 @@ class SQLiteDB:
                             obj, 'assigned_at') and getattr(obj, 'assigned_at') else datetime.utcnow().isoformat()
                     ))
                     obj.id = cursor.lastrowid
+            elif hasattr(obj, 'key') and hasattr(obj, 'scopes') and hasattr(obj, 'revoked'):
+                # APIKey object
+                if has_id:
+                    await self._db.execute("""
+                        UPDATE api_keys 
+                        SET key=?, label=?, scopes=?, revoked=?, environment_id=?,
+                            created_at=?, expires_at=?, last_used_at=?, usage_count=?, metadata=?
+                        WHERE id=?
+                    """, (
+                        getattr(obj, 'key', None),
+                        getattr(obj, 'label', None),
+                        getattr(obj, 'scopes', None),
+                        1 if getattr(obj, 'revoked', False) else 0,
+                        getattr(obj, 'environment_id', None),
+                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if getattr(
+                            obj, 'created_at', None) else datetime.utcnow().isoformat(),
+                        getattr(obj, 'expires_at', None).isoformat() if getattr(
+                            obj, 'expires_at', None) else None,
+                        getattr(obj, 'last_used_at', None).isoformat() if getattr(
+                            obj, 'last_used_at', None) else None,
+                        getattr(obj, 'usage_count', 0),
+                        json.dumps(getattr(obj, 'metadata_json', None)) if getattr(
+                            obj, 'metadata_json', None) else None,
+                        obj.id
+                    ))
+                else:
+                    cursor = await self._db.execute("""
+                        INSERT INTO api_keys (key, label, scopes, revoked, environment_id,
+                            created_at, expires_at, last_used_at, usage_count, metadata)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        getattr(obj, 'key', None),
+                        getattr(obj, 'label', None),
+                        getattr(obj, 'scopes', None),
+                        1 if getattr(obj, 'revoked', False) else 0,
+                        getattr(obj, 'environment_id', None),
+                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if getattr(
+                            obj, 'created_at', None) else datetime.utcnow().isoformat(),
+                        getattr(obj, 'expires_at', None).isoformat() if getattr(
+                            obj, 'expires_at', None) else None,
+                        getattr(obj, 'last_used_at', None).isoformat() if getattr(
+                            obj, 'last_used_at', None) else None,
+                        getattr(obj, 'usage_count', 0),
+                        json.dumps(getattr(obj, 'metadata_json', None)) if getattr(
+                            obj, 'metadata_json', None) else None,
+                    ))
+                    obj.id = cursor.lastrowid
+            elif hasattr(obj, 'slug') and hasattr(obj, 'name') and not hasattr(obj, 'version'):
+                # Environment object
+                if has_id:
+                    await self._db.execute("""
+                        UPDATE environments
+                        SET name=?, slug=?, description=?, updated_at=?
+                        WHERE id=?
+                    """, (
+                        getattr(obj, 'name', None),
+                        getattr(obj, 'slug', None),
+                        getattr(obj, 'description', None),
+                        datetime.utcnow().isoformat(),
+                        obj.id
+                    ))
+                else:
+                    cursor = await self._db.execute("""
+                        INSERT INTO environments (name, slug, description, created_at)
+                        VALUES (?, ?, ?, ?)
+                    """, (
+                        getattr(obj, 'name', None),
+                        getattr(obj, 'slug', None),
+                        getattr(obj, 'description', None),
+                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if getattr(
+                            obj, 'created_at', None) else datetime.utcnow().isoformat(),
+                    ))
+                    obj.id = cursor.lastrowid
             else:
                 logger.warning(
                     f"Unknown object type, cannot insert/update: {type(obj)}")
@@ -824,15 +943,23 @@ class SQLiteDB:
             await self._db.execute("DELETE FROM refresh_tokens WHERE id = ?", (obj.id,))
         elif hasattr(obj, 'otp_hash'):
             await self._db.execute("DELETE FROM otps WHERE id = ?", (obj.id,))
+        elif hasattr(obj, 'key') and hasattr(obj, 'scopes') and hasattr(obj, 'revoked'):
+            await self._db.execute("DELETE FROM api_keys WHERE id = ?", (obj.id,))
+        elif hasattr(obj, 'slug') and hasattr(obj, 'name') and not hasattr(obj, 'version'):
+            await self._db.execute("DELETE FROM environments WHERE id = ?", (obj.id,))
+        elif hasattr(obj, 'value') and hasattr(obj, 'name') and not hasattr(obj, 'version'):
+            await self._db.execute("DELETE FROM secrets WHERE id = ?", (obj.id,))
+        elif hasattr(obj, 'config') and hasattr(obj, 'type') and hasattr(obj, 'api_id'):
+            await self._db.execute("DELETE FROM connectors WHERE id = ?", (obj.id,))
 
         await self._db.commit()
 
     async def execute(self, statement):
         """
-        Execute a SQLAlchemy select statement on SQLite data.
+        Execute a SQLAlchemy statement (SELECT or UPDATE) on SQLite data.
 
         Args:
-            statement: SQLAlchemy select statement
+            statement: SQLAlchemy select or update statement
 
         Returns:
             QueryResult: Object with scalars() method for result access
@@ -840,26 +967,84 @@ class SQLiteDB:
         if not self._db:
             await self.connect()
 
-        from app.db.models import User, OTP, RefreshToken, Role, Permission, UserRole, API
+        from app.db.models import User, OTP, RefreshToken, Role, Permission, UserRole, API, APIKey, Environment, Secret, Connector
 
-        # Determine which model is being queried
+        table_map = {
+            User: 'users',
+            OTP: 'otps',
+            RefreshToken: 'refresh_tokens',
+            Role: 'roles',
+            Permission: 'permissions',
+            UserRole: 'user_roles',
+            API: 'apis',
+            APIKey: 'api_keys',
+            Environment: 'environments',
+            Secret: 'secrets',
+            Connector: 'connectors'
+        }
+
+        # Handle UPDATE statements
+        if hasattr(statement, 'entity_description') and not hasattr(statement, 'column_descriptions'):
+            try:
+                entity_type = statement.entity_description.get('entity', None)
+                table_name = table_map.get(entity_type)
+                if not table_name:
+                    return QueryResult([], rowcount=0)
+
+                # Build SET clause from values
+                set_parts = []
+                params = []
+                if hasattr(statement, '_values') and statement._values:
+                    for col_clause, bind_param in statement._values.items():
+                        col_name = col_clause.key if hasattr(
+                            col_clause, 'key') else str(col_clause)
+                        val = bind_param.value if hasattr(
+                            bind_param, 'value') else bind_param
+                        if isinstance(val, bool):
+                            params.append(1 if val else 0)
+                        else:
+                            params.append(val)
+                        set_parts.append(f"{col_name} = ?")
+
+                if not set_parts:
+                    return QueryResult([], rowcount=0)
+
+                query = f"UPDATE {table_name} SET {', '.join(set_parts)}"
+
+                # Apply WHERE clause
+                if hasattr(statement, '_where_criteria') and statement._where_criteria:
+                    where_parts = []
+                    for criterion in statement._where_criteria:
+                        try:
+                            if hasattr(criterion, 'left') and hasattr(criterion, 'right'):
+                                left_val = criterion.left.key if hasattr(
+                                    criterion.left, 'key') else str(criterion.left)
+                                right_val = criterion.right.value if hasattr(
+                                    criterion.right, 'value') else criterion.right
+                                where_parts.append(f"{left_val} = ?")
+                                params.append(right_val)
+                        except Exception as ex:
+                            logger.debug(
+                                f"Error evaluating UPDATE criterion: {ex}")
+
+                    if where_parts:
+                        query += " WHERE " + " AND ".join(where_parts)
+
+                cursor = await self._db.execute(query, params)
+                await self._db.commit()
+                return QueryResult([], rowcount=cursor.rowcount)
+
+            except Exception as e:
+                logger.warning(f"UPDATE execution error: {e}", exc_info=True)
+                return QueryResult([], rowcount=0)
+
+        # Handle SELECT statements
         if hasattr(statement, '_propagate_attrs') and hasattr(statement, 'column_descriptions'):
             try:
                 entities = statement.column_descriptions
                 if entities:
                     entity_type = entities[0].get(
                         'entity', entities[0].get('type'))
-
-                    # Map entity to table
-                    table_map = {
-                        User: 'users',
-                        OTP: 'otps',
-                        RefreshToken: 'refresh_tokens',
-                        Role: 'roles',
-                        Permission: 'permissions',
-                        UserRole: 'user_roles',
-                        API: 'apis'
-                    }
 
                     table_name = table_map.get(entity_type)
                     if not table_name:
@@ -915,7 +1100,8 @@ class SQLiteDB:
             await self.connect()
 
         tables = ['apis', 'users', 'refresh_tokens',
-                  'otps', 'roles', 'permissions', 'user_roles']
+                  'otps', 'roles', 'permissions', 'user_roles',
+                  'connectors', 'secrets', 'api_keys']
         for table in tables:
             await self._db.execute(f"DELETE FROM {table}")
 
@@ -940,7 +1126,10 @@ class SQLiteDB:
             'otps': 'otps',
             'roles': 'roles',
             'permissions': 'permissions',
-            'user_roles': 'user_roles'
+            'user_roles': 'user_roles',
+            'connectors': 'connectors',
+            'secrets': 'secrets',
+            'api_keys': 'api_keys'
         }
 
         for key, table in tables.items():
