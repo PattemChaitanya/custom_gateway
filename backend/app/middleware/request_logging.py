@@ -25,24 +25,28 @@ def register_request_logging(app: FastAPI) -> None:
             response = await call_next(request)
         except Exception:
             duration_ms = int((time.time() - start) * 1000)
+            request_id = getattr(request.state, "request_id", "unknown")
             logger.info(
                 "http.request",
                 method=method,
                 path=path,
                 query=query,
                 client=client,
+                request_id=request_id,
                 status_code=500,
                 duration_ms=duration_ms,
             )
             raise
         else:
             duration_ms = int((time.time() - start) * 1000)
+            request_id = getattr(request.state, "request_id", "unknown")
             logger.info(
                 "http.request",
                 method=method,
                 path=path,
                 query=query,
                 client=client,
+                request_id=request_id,
                 status_code=response.status_code,
                 duration_ms=duration_ms,
             )

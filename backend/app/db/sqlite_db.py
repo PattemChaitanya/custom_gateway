@@ -17,6 +17,15 @@ import os
 logger = logging.getLogger(__name__)
 
 
+def _to_iso(value) -> Optional[str]:
+    """Convert a datetime (or already-string) value to an ISO-8601 string, or None."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return value.isoformat()
+
+
 class QueryResult:
     """Wrapper for query results to mimic SQLAlchemy Result object."""
 
@@ -624,10 +633,9 @@ class SQLiteDB:
                             obj, 'resource') and getattr(obj, 'resource') is not None else None,
                         json.dumps(getattr(obj, 'config', None)) if hasattr(
                             obj, 'config') and getattr(obj, 'config') is not None else None,
-                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
-                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat(),
-                        getattr(obj, 'updated_at', None).isoformat() if hasattr(
-                            obj, 'updated_at') and getattr(obj, 'updated_at') else None
+                        _to_iso(getattr(obj, 'created_at', None)
+                                ) or datetime.utcnow().isoformat(),
+                        _to_iso(getattr(obj, 'updated_at', None))
                     ))
                     obj.id = cursor.lastrowid
 
@@ -642,8 +650,7 @@ class SQLiteDB:
                         getattr(obj, 'email', None),
                         getattr(obj, 'otp_hash', None),
                         bool_to_int(getattr(obj, 'consumed', None), False),
-                        getattr(obj, 'expires_at', None).isoformat() if hasattr(
-                            obj, 'expires_at') and getattr(obj, 'expires_at') else None,
+                        _to_iso(getattr(obj, 'expires_at', None)),
                         getattr(obj, 'attempts', 0),
                         getattr(obj, 'transport', None),
                         obj.id
@@ -656,10 +663,9 @@ class SQLiteDB:
                         getattr(obj, 'email', None),
                         getattr(obj, 'otp_hash', None),
                         bool_to_int(getattr(obj, 'consumed', None), False),
-                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
-                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat(),
-                        getattr(obj, 'expires_at', None).isoformat() if hasattr(
-                            obj, 'expires_at') and getattr(obj, 'expires_at') else None,
+                        _to_iso(getattr(obj, 'created_at', None)
+                                ) or datetime.utcnow().isoformat(),
+                        _to_iso(getattr(obj, 'expires_at', None)),
                         getattr(obj, 'attempts', 0),
                         getattr(obj, 'transport', None)
                     ))
@@ -676,8 +682,7 @@ class SQLiteDB:
                         getattr(obj, 'user_id', None),
                         getattr(obj, 'token', None),
                         bool_to_int(getattr(obj, 'revoked', None), False),
-                        getattr(obj, 'expires_at', None).isoformat() if hasattr(
-                            obj, 'expires_at') and getattr(obj, 'expires_at') else None,
+                        _to_iso(getattr(obj, 'expires_at', None)),
                         obj.id
                     ))
                 else:
@@ -688,10 +693,9 @@ class SQLiteDB:
                         getattr(obj, 'user_id', None),
                         getattr(obj, 'token', None),
                         bool_to_int(getattr(obj, 'revoked', None), False),
-                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
-                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat(),
-                        getattr(obj, 'expires_at', None).isoformat() if hasattr(
-                            obj, 'expires_at') and getattr(obj, 'expires_at') else None
+                        _to_iso(getattr(obj, 'created_at', None)
+                                ) or datetime.utcnow().isoformat(),
+                        _to_iso(getattr(obj, 'expires_at', None))
                     ))
                     obj.id = cursor.lastrowid
 
@@ -721,8 +725,8 @@ class SQLiteDB:
                         getattr(obj, 'type', None),
                         json.dumps(getattr(obj, 'config', None)) if hasattr(
                             obj, 'config') and getattr(obj, 'config') is not None else None,
-                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
-                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat(),
+                        _to_iso(getattr(obj, 'created_at', None)
+                                ) or datetime.utcnow().isoformat(),
                         getattr(obj, 'updated_at', None)
                     ))
                     obj.id = cursor.lastrowid
@@ -751,8 +755,8 @@ class SQLiteDB:
                         getattr(obj, 'value', None),
                         getattr(obj, 'description', None),
                         getattr(obj, 'tags', None),
-                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
-                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat(),
+                        _to_iso(getattr(obj, 'created_at', None)
+                                ) or datetime.utcnow().isoformat(),
                         getattr(obj, 'updated_at', None)
                     ))
                     obj.id = cursor.lastrowid
@@ -781,8 +785,8 @@ class SQLiteDB:
                         getattr(obj, 'resource', None),
                         getattr(obj, 'action', None),
                         getattr(obj, 'description', None),
-                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
-                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat()
+                        _to_iso(getattr(obj, 'created_at', None)
+                                ) or datetime.utcnow().isoformat()
                     ))
                     obj.id = cursor.lastrowid
 
@@ -809,8 +813,8 @@ class SQLiteDB:
                         getattr(obj, 'description', None),
                         json.dumps(getattr(obj, 'permissions', [])) if hasattr(
                             obj, 'permissions') else None,
-                        getattr(obj, 'created_at', datetime.utcnow()).isoformat() if hasattr(
-                            obj, 'created_at') and getattr(obj, 'created_at') else datetime.utcnow().isoformat()
+                        _to_iso(getattr(obj, 'created_at', None)
+                                ) or datetime.utcnow().isoformat()
                     ))
                     obj.id = cursor.lastrowid
 
@@ -833,8 +837,8 @@ class SQLiteDB:
                     """, (
                         getattr(obj, 'user_id', None),
                         getattr(obj, 'role_id', None),
-                        getattr(obj, 'assigned_at', datetime.utcnow()).isoformat() if hasattr(
-                            obj, 'assigned_at') and getattr(obj, 'assigned_at') else datetime.utcnow().isoformat()
+                        _to_iso(getattr(obj, 'assigned_at', None)
+                                ) or datetime.utcnow().isoformat()
                     ))
                     obj.id = cursor.lastrowid
             elif hasattr(obj, 'key') and hasattr(obj, 'scopes') and hasattr(obj, 'revoked'):

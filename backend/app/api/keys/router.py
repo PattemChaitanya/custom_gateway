@@ -5,9 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from app.db.connector import get_db
-from app.security.api_keys import APIKeyManager, get_api_key_dependency
-from app.api.auth.auth_dependency import get_current_user
+from app.security.api_keys import APIKeyManager
+from app.authorizers.rbac import require_permission
 from app.db.models import User, APIKey, Environment
+from app.security.api_keys import get_api_key_dependency
 
 router = APIRouter(prefix="/api/keys", tags=["api-keys"])
 
@@ -37,7 +38,7 @@ class APIKeyResponse(BaseModel):
 async def create_key(
     payload: CreateAPIKeyRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("key:create")),
 ):
     """Create a new API key. The actual key is only shown once!"""
     manager = APIKeyManager(db)
@@ -54,7 +55,7 @@ async def create_key(
 async def list_keys(
     environment_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("key:list")),
 ):
     """List all API keys (without showing actual key values)."""
     manager = APIKeyManager(db)
@@ -66,7 +67,7 @@ async def list_keys(
 async def revoke_key(
     key_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("key:update")),
 ):
     """Revoke an API key."""
     manager = APIKeyManager(db)
@@ -80,7 +81,7 @@ async def revoke_key(
 async def delete_key(
     key_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("key:delete")),
 ):
     """Delete an API key permanently."""
     manager = APIKeyManager(db)
@@ -93,7 +94,7 @@ async def delete_key(
 async def get_key_stats(
     key_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("key:read")),
 ):
     """Get usage statistics for an API key."""
     manager = APIKeyManager(db)
@@ -117,7 +118,7 @@ async def verify_key(api_key: APIKey = Depends(get_api_key_dependency)):
 @router.get("/environments", status_code=status.HTTP_200_OK)
 async def list_environments(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("key:list")),
 ):
     """List all available environments for API key assignment."""
     from sqlalchemy import select
@@ -138,7 +139,7 @@ async def list_environments(
 async def create_environment(
     payload: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("key:create")),
 ):
     """Create a new environment."""
     from sqlalchemy import select
@@ -173,7 +174,7 @@ async def create_environment(
 async def delete_environment(
     env_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("key:delete")),
 ):
     """Delete an environment."""
     from sqlalchemy import select

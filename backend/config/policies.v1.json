@@ -1,0 +1,41 @@
+{
+  "version": "policies/v1",
+  "routes": [
+    {
+      "path_prefix": "/orders",
+      "service": "orders",
+      "strategy": "weighted",
+      "auth_policy": "jwt_default",
+      "rate_limit_policy": "standard"
+    },
+    {
+      "path_prefix": "/billing",
+      "service": "billing",
+      "strategy": "round_robin",
+      "auth_policy": "jwt_default",
+      "rate_limit_policy": "strict"
+    }
+  ],
+  "auth": {
+    "jwt_default": {
+      "name": "jwt_default",
+      "mode": "jwt",
+      "scopes": [
+        "gateway.read",
+        "gateway.write"
+      ]
+    }
+  },
+  "rate_limits": {
+    "standard": {
+      "name": "standard",
+      "limit": 120,
+      "window_seconds": 60
+    },
+    "strict": {
+      "name": "strict",
+      "limit": 30,
+      "window_seconds": 60
+    }
+  }
+}

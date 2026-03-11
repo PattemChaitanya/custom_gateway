@@ -6,9 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 from app.db.connector import get_db
-from app.authorizers.rbac import RBACManager
-from app.api.auth.auth_dependency import get_current_user
-from app.db.models import User
+from app.authorizers.rbac import RBACManager, require_permission
 
 router = APIRouter(prefix="/api/authorizers", tags=["Authorizers"])
 
@@ -129,7 +127,7 @@ class UserRoleAssignment(BaseModel):
 async def create_role(
     role_data: RoleCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:create")),
 ):
     """
     Create a new role.
@@ -170,7 +168,7 @@ async def create_role(
 @router.get("/roles", response_model=List[RoleResponse])
 async def list_roles(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:list")),
 ):
     """List all roles."""
     manager = RBACManager(db)
@@ -200,7 +198,7 @@ async def list_roles(
 async def get_role(
     role_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:read")),
 ):
     """Get a specific role by ID."""
     manager = RBACManager(db)
@@ -228,7 +226,7 @@ async def update_role(
     role_id: int,
     role_data: RoleUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:update")),
 ):
     """Update a role."""
     manager = RBACManager(db)
@@ -264,7 +262,7 @@ async def update_role(
 async def delete_role(
     role_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:delete")),
 ):
     """Delete a role."""
     manager = RBACManager(db)
@@ -285,7 +283,7 @@ async def delete_role(
 async def create_permission(
     permission_data: PermissionCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:create")),
 ):
     """Create a new permission."""
     manager = RBACManager(db)
@@ -316,7 +314,7 @@ async def create_permission(
 @router.get("/permissions", response_model=List[PermissionResponse])
 async def list_permissions(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:list")),
 ):
     """List all permissions."""
     manager = RBACManager(db)
@@ -346,7 +344,7 @@ async def list_permissions(
 async def get_permission(
     permission_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:read")),
 ):
     """Get a specific permission by ID."""
     manager = RBACManager(db)
@@ -373,7 +371,7 @@ async def get_permission(
 async def delete_permission(
     permission_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:delete")),
 ):
     """Delete a permission."""
     manager = RBACManager(db)
@@ -394,7 +392,7 @@ async def delete_permission(
 async def assign_role_to_user(
     assignment: UserRoleAssignment,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:assign")),
 ):
     """Assign a role to a user."""
     manager = RBACManager(db)
@@ -414,7 +412,7 @@ async def remove_role_from_user(
     user_id: int,
     role_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:assign")),
 ):
     """Remove a role from a user."""
     manager = RBACManager(db)
@@ -433,7 +431,7 @@ async def remove_role_from_user(
 async def get_user_roles(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("role:read")),
 ):
     """Get all roles assigned to a user."""
     manager = RBACManager(db)

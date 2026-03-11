@@ -15,11 +15,11 @@ export default function Dashboard() {
         <Box sx={{ mt: 2 }}>
           <Typography>Welcome, {profile.email}</Typography>
           <Box sx={{ display: "flex", gap: 1.5, mt: 2, flexWrap: "wrap" }}>
-            <Button
-              variant="contained"
-              onClick={() => navigate("/apis")}
-            >
+            <Button variant="contained" onClick={() => navigate("/apis")}>
               Manage APIs
+            </Button>
+            <Button variant="outlined" onClick={() => navigate("/mini-cloud")}>
+              Control Plane
             </Button>
             <Button
               variant="outlined"

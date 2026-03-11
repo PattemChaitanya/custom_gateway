@@ -5,6 +5,9 @@ from .prometheus import (
     request_latency,
     error_counter,
     active_connections,
+    route_counter,
+    route_duration,
+    route_error_counter,
     MetricsCollector,
 )
 from .middleware import register_metrics_middleware
@@ -15,6 +18,9 @@ __all__ = [
     "request_latency",
     "error_counter",
     "active_connections",
+    "route_counter",
+    "route_duration",
+    "route_error_counter",
     "MetricsCollector",
     "register_metrics_middleware",
     "MetricsStorage",

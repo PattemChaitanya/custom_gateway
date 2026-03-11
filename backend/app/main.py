@@ -1,9 +1,12 @@
 from app.metrics.prometheus import metrics_endpoint
+import asyncio
+from app.api.mini_cloud import router as mini_cloud_router
 from app.api.admin import router as admin_router
 from app.api.authorizers import router as authorizers_router
 from app.api.connectors import router as connectors_router
 from app.api.keys import router as keys_router
 from app.api.secrets import router as secrets_router
+from app.gateway.router import router as gateway_router
 from app.authorizers.middleware import register_authorization_middleware
 from app.rate_limiter.middleware import register_rate_limit_middleware
 from app.metrics.middleware import register_metrics_middleware
@@ -18,7 +21,9 @@ from app.api.auth import auth_router
 from app.api.apis import router as apis_router
 from .logging_config import configure_logging, get_logger
 from app.middleware.request_logging import register_request_logging
+from app.middleware.request_id import register_request_id_middleware
 from app.db import get_db_manager
+from app.control_plane.runtime import restore_state, run_control_loop, snapshot_state
 
 # structured logging
 configure_logging(level="INFO")
@@ -72,6 +77,8 @@ async def lifespan(app: FastAPI):
     """
     # Initialize database manager
     db_manager = get_db_manager()
+    control_loop_stop_event = asyncio.Event()
+    control_loop_task = None
 
     try:
         # Determine echo_sql from environment
@@ -102,6 +109,28 @@ async def lifespan(app: FastAPI):
         except Exception as seed_err:
             logger.warning(f"Failed to seed default environments: {seed_err}")
 
+        # Restore persisted control-plane state when available.
+        try:
+            restore_info = restore_state()
+            logger.info(f"Mini-cloud control-plane restore: {restore_info}")
+        except Exception as restore_err:
+            logger.warning(
+                f"Failed to restore mini-cloud control-plane state: {restore_err}")
+
+        # Start periodic mini-cloud control loop.
+        try:
+            import os
+            interval = float(os.getenv("CONTROL_LOOP_INTERVAL_SECONDS", "5"))
+            control_loop_task = asyncio.create_task(
+                run_control_loop(control_loop_stop_event,
+                                 interval_seconds=interval)
+            )
+            logger.info(
+                f"Mini-cloud control loop started (interval={interval}s)")
+        except Exception as ctrl_err:
+            logger.warning(
+                f"Failed to start mini-cloud control loop: {ctrl_err}")
+
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
         logger.warning("Attempting to use in-memory fallback")
@@ -119,6 +148,11 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown
     logger.info("Shutting down application")
     try:
+        control_loop_stop_event.set()
+        if control_loop_task:
+            await control_loop_task
+        snapshot_info = snapshot_state()
+        logger.info(f"Mini-cloud control-plane snapshot: {snapshot_info}")
         await db_manager.shutdown()
         logger.info("Database connections closed gracefully")
     except Exception as e:
@@ -138,6 +172,7 @@ app = FastAPI(
 # Access-Control-Allow-* headers — even on error responses.)
 
 register_request_logging(app)  # Request logging with header redaction
+register_request_id_middleware(app)  # Request ID propagation for tracing
 register_validation_middleware(
     app, max_body_size=10*1024*1024)  # Input validation
 register_metrics_middleware(app)  # Metrics collection
@@ -166,6 +201,11 @@ app.include_router(connectors_router)
 app.include_router(secrets_router)
 app.include_router(authorizers_router)
 app.include_router(admin_router)
+app.include_router(mini_cloud_router)
+
+# Gateway proxy — data plane: /gw/{api_id}/{path}
+# Must be registered AFTER management routers so /apis, /api/keys, etc. are not shadowed.
+app.include_router(gateway_router)
 
 # Metrics endpoint
 

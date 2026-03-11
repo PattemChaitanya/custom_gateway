@@ -8,7 +8,7 @@ from sqlalchemy import select
 from pydantic import BaseModel, EmailStr, Field
 from app.db.connector import get_db
 from app.db.models import User
-from app.authorizers.rbac import RBACManager
+from app.authorizers.rbac import RBACManager, require_permission
 from app.api.auth.auth_dependency import get_current_user
 
 router = APIRouter()
@@ -71,7 +71,7 @@ class CreateUserRequest(BaseModel):
 @router.get("/", response_model=List[UserResponse])
 async def list_users(
     session: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("user:list")),
 ):
     """
     List all users in the system.
@@ -148,7 +148,7 @@ async def get_current_user_info(
 async def get_user(
     user_id: int,
     session: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("user:read")),
 ):
     """
     Get detailed information about a specific user.
@@ -196,7 +196,7 @@ async def update_user(
     user_id: int,
     user_data: UserUpdate,
     session: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("user:update")),
 ):
     """
     Update user information.
@@ -247,7 +247,7 @@ async def update_user(
 async def delete_user(
     user_id: int,
     session: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("user:delete")),
 ):
     """
     Delete a user.
@@ -289,7 +289,7 @@ async def delete_user(
 async def create_user(
     user_data: CreateUserRequest,
     session: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("user:create")),
 ):
     """
     Create a new user.

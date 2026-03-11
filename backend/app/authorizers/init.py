@@ -60,6 +60,20 @@ async def init_rbac_system(session: AsyncSession, force: bool = False) -> dict:
             {"name": "role:delete", "resource": "role", "action": "delete"},
             {"name": "role:list", "resource": "role", "action": "list"},
             {"name": "role:assign", "resource": "role", "action": "assign"},
+
+            # Secret Management
+            {"name": "secret:create", "resource": "secret", "action": "create"},
+            {"name": "secret:read", "resource": "secret", "action": "read"},
+            {"name": "secret:update", "resource": "secret", "action": "update"},
+            {"name": "secret:delete", "resource": "secret", "action": "delete"},
+            {"name": "secret:list", "resource": "secret", "action": "list"},
+
+            # Connector Management
+            {"name": "connector:create", "resource": "connector", "action": "create"},
+            {"name": "connector:read", "resource": "connector", "action": "read"},
+            {"name": "connector:update", "resource": "connector", "action": "update"},
+            {"name": "connector:delete", "resource": "connector", "action": "delete"},
+            {"name": "connector:list", "resource": "connector", "action": "list"},
         ]
 
         # Create permissions
@@ -89,6 +103,8 @@ async def init_rbac_system(session: AsyncSession, force: bool = False) -> dict:
                     "user:create", "user:read", "user:update", "user:delete", "user:list",
                     "key:create", "key:read", "key:update", "key:delete", "key:list",
                     "role:create", "role:read", "role:update", "role:delete", "role:list", "role:assign",
+                    "secret:create", "secret:read", "secret:update", "secret:delete", "secret:list",
+                    "connector:create", "connector:read", "connector:update", "connector:delete", "connector:list",
                 ]
             },
             {
@@ -97,6 +113,8 @@ async def init_rbac_system(session: AsyncSession, force: bool = False) -> dict:
                 "permissions": [
                     "api:create", "api:read", "api:update", "api:list",
                     "key:create", "key:read", "key:list",
+                    "secret:read", "secret:list",
+                    "connector:create", "connector:read", "connector:update", "connector:list",
                 ]
             },
             {

@@ -1,0 +1,45 @@
+{
+  "version": "control-plane-state/v1",
+  "saved_at": 1773241890.6156013,
+  "registry": {
+    "services": {},
+    "rr_counters": {}
+  },
+  "scheduler": {
+    "queue": [
+      "2aed7758-bd1e-4d65-b196-69c26cc7678b"
+    ],
+    "jobs": {
+      "2aed7758-bd1e-4d65-b196-69c26cc7678b": {
+        "id": "2aed7758-bd1e-4d65-b196-69c26cc7678b",
+        "job_type": "reconcile",
+        "payload": {},
+        "max_retries": 3,
+        "created_at": 1773229320.6199396,
+        "available_at": 1773229320.6199405,
+        "attempts": 1,
+        "lease_owner": "worker-1",
+        "lease_expires_at": 1773229356.084962
+      }
+    },
+    "dlq": [],
+    "lease_seconds": 30,
+    "base_backoff_seconds": 2,
+    "max_backoff_seconds": 60
+  },
+  "autoscaler": {
+    "current_replicas": 1,
+    "last_scaled_at": 0.0,
+    "min_replicas": 1,
+    "max_replicas": 10
+  },
+  "simulated_latency_p95_ms": 50.0,
+  "last_control_loop_state": {
+    "expired_instances": [],
+    "autoscaler_decision": {
+      "replicas": 1,
+      "action": "none",
+      "reason": "steady"
+    }
+  }
+}

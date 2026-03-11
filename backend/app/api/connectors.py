@@ -7,8 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 from app.db.connector import get_db
 from app.connectors.manager import ConnectorManager
-from app.api.auth.auth_dependency import get_current_user
-from app.db.models import User
+from app.authorizers.rbac import require_permission
 
 router = APIRouter(prefix="/api/connectors", tags=["Connectors"])
 
@@ -68,7 +67,7 @@ class ConnectorTestResult(BaseModel):
 async def create_connector(
     connector_data: ConnectorCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("connector:create")),
 ):
     """
     Create a new connector.
@@ -106,7 +105,7 @@ async def create_connector(
 async def list_connectors(
     api_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("connector:list")),
 ):
     """
     List all connectors.
@@ -141,7 +140,7 @@ async def list_connectors(
 async def get_connector(
     connector_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("connector:read")),
 ):
     """Get a specific connector by ID."""
     manager = ConnectorManager(db)
@@ -170,7 +169,7 @@ async def update_connector(
     connector_id: int,
     connector_data: ConnectorUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("connector:update")),
 ):
     """Update a connector."""
     manager = ConnectorManager(db)
@@ -209,7 +208,7 @@ async def update_connector(
 async def delete_connector(
     connector_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("connector:delete")),
 ):
     """Delete a connector."""
     manager = ConnectorManager(db)
@@ -229,7 +228,7 @@ async def delete_connector(
 async def test_connector(
     connector_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("connector:read")),
 ):
     """
     Test connector connection.

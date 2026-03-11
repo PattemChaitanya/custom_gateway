@@ -31,6 +31,8 @@ def get_redis_client() -> redis.Redis:
             redis_url,
             decode_responses=True,
             max_connections=20,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
         )
         _redis_url_cached = redis_url
         return _redis_client

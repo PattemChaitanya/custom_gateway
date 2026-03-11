@@ -470,32 +470,70 @@ async def has_permission(
 
 
 def require_permission(permission: str):
-    """Decorator to require a specific permission."""
+    """FastAPI dependency factory — require *permission* or superuser status.
+
+    Superusers (``is_superuser=True``) bypass all RBAC checks.
+    All other authenticated users must have the named permission assigned
+    through their roles.
+
+    Usage::
+
+        @router.post("/")
+        async def create(current_user = Depends(require_permission("api:create"))):
+            ...
+    """
     async def permission_checker(
         user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ):
+        # Normalise user — may be User ORM object or SimpleNamespace
+        is_super = (
+            user.get("is_superuser", False)
+            if isinstance(user, dict)
+            else getattr(user, "is_superuser", False)
+        )
+        if is_super:
+            return user  # Superusers bypass all RBAC checks
+
+        user_id = user.get("id") if isinstance(
+            user, dict) else getattr(user, "id", None)
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not resolve authenticated user",
+            )
+
         manager = RBACManager(db)
-        if not await manager.user_has_permission(user.id, permission):
+        if not await manager.user_has_permission(user_id, permission):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Permission denied: {permission} required"
+                detail=f"Forbidden: '{permission}' permission required",
             )
         return user
     return permission_checker
 
 
 def require_role(role_name: str):
-    """Decorator to require a specific role."""
+    """FastAPI dependency factory — require *role_name* or superuser status."""
     async def role_checker(
         user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ):
+        is_super = (
+            user.get("is_superuser", False)
+            if isinstance(user, dict)
+            else getattr(user, "is_superuser", False)
+        )
+        if is_super:
+            return user
+
+        user_id = user.get("id") if isinstance(
+            user, dict) else getattr(user, "id", None)
         manager = RBACManager(db)
-        if not await manager.user_has_role(user.id, role_name):
+        if not await manager.user_has_role(user_id, role_name):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role required: {role_name}"
+                detail=f"Forbidden: '{role_name}' role required",
             )
         return user
     return role_checker

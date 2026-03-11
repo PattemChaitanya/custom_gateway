@@ -7,8 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 from app.db.connector import get_db
 from app.security.secrets import SecretsManager
-from app.api.auth.auth_dependency import get_current_user
-from app.db.models import User
+from app.authorizers.rbac import require_permission
 
 router = APIRouter(prefix="/api/secrets", tags=["Secrets"])
 
@@ -85,7 +84,7 @@ class SecretDetailResponse(SecretResponse):
 async def create_secret(
     secret_data: SecretCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("secret:create")),
 ):
     """
     Create a new secret.
@@ -132,7 +131,7 @@ async def create_secret(
 async def list_secrets(
     tags: Optional[str] = Query(None, description="Filter by tag"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("secret:list")),
 ):
     """
     List all secrets.
@@ -169,7 +168,7 @@ async def get_secret(
     name: str,
     decrypt: bool = Query(False, description="Whether to decrypt the value"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("secret:read")),
 ):
     """
     Get a specific secret by name.
@@ -204,7 +203,7 @@ async def update_secret(
     name: str,
     secret_data: SecretUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("secret:update")),
 ):
     """
     Update a secret's value and/or description.
@@ -253,7 +252,7 @@ async def update_secret(
 async def delete_secret(
     name: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("secret:delete")),
 ):
     """Delete a secret permanently."""
     manager = SecretsManager(db)
@@ -274,7 +273,7 @@ async def rotate_secret(
     name: str,
     rotate_data: SecretRotate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(require_permission("secret:update")),
 ):
     """
     Rotate a secret with a new value.

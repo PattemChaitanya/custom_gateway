@@ -62,7 +62,8 @@ class API(Base):
     description = Column(Text, nullable=True)
     owner_id = Column(Integer, ForeignKey(
         "users.id", ondelete="SET NULL"), nullable=True, index=True)
-    # canonical configuration for the API (paths, defaults, etc.)
+    # Lifecycle status: draft | active | deprecated
+    status = Column(String, nullable=False, default="draft", index=True)
     # optional API type (rest/graphql) stored as a simple string for quick queries
     type = Column(String, nullable=True)
     # resource column can store structured resource metadata (JSON)
@@ -79,6 +80,10 @@ class API(Base):
         "RateLimit", back_populates="api", cascade="all, delete-orphan")
     connectors = relationship(
         "Connector", back_populates="api", cascade="all, delete-orphan")
+    deployments = relationship(
+        "APIDeployment", back_populates="api", cascade="all, delete-orphan")
+    backend_pools = relationship(
+        "BackendPool", back_populates="api", cascade="all, delete-orphan")
 
 
 class Schema(Base):
@@ -121,6 +126,8 @@ class RateLimit(Base):
     name = Column(String, nullable=False, index=True)
     # per-key, per-ip, global
     key_type = Column(String, nullable=False, default='global')
+    # fixed_window, sliding_window, token_bucket
+    algorithm = Column(String, nullable=False, default='fixed_window')
     limit = Column(Integer, nullable=False)
     window_seconds = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -279,7 +286,7 @@ class BackendPool(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    api = relationship("API")
+    api = relationship("API", back_populates="backend_pools")
 
 
 class LoadBalancer(Base):
@@ -363,3 +370,40 @@ class ModuleScript(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     module = relationship("ModuleMetadata")
+
+
+class APIDeployment(Base):
+    """Associates a registered API with a deployment environment.
+
+    An API starts as ``draft``.  Deploying it to an environment sets
+    the API's status to ``active`` and creates an ``APIDeployment`` row.
+    Each environment gets at most one deployment per API (enforced by
+    the unique constraint on ``api_id`` + ``environment_id``).
+
+    ``target_url_override`` — when set, the gateway uses this URL for
+    requests routed to this specific environment instead of the API's
+    global ``config.target_url``.
+    """
+    __tablename__ = "api_deployments"
+    __table_args__ = (
+        UniqueConstraint("api_id", "environment_id",
+                         name="uq_api_deployment_api_env"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    api_id = Column(Integer, ForeignKey(
+        "apis.id", ondelete="CASCADE"), nullable=False, index=True)
+    environment_id = Column(Integer, ForeignKey(
+        "environments.id", ondelete="CASCADE"), nullable=False, index=True)
+    # deployed | inactive
+    status = Column(String, nullable=False, default="deployed", index=True)
+    # Per-environment upstream URL override (overrides api.config.target_url)
+    target_url_override = Column(String, nullable=True)
+    # User who triggered the deployment (informational, no FK cascade)
+    deployed_by = Column(Integer, ForeignKey(
+        "users.id", ondelete="SET NULL"), nullable=True)
+    deployed_at = Column(DateTime(timezone=True), server_default=func.now())
+    notes = Column(Text, nullable=True)
+
+    api = relationship("API", back_populates="deployments")
+    environment = relationship("Environment")

@@ -19,7 +19,8 @@ request_latency = Histogram(
     'gateway_http_request_duration_seconds',
     'HTTP request latency in seconds',
     ['method', 'endpoint'],
-    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05,
+             0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 )
 
 error_counter = Counter(
@@ -33,10 +34,29 @@ active_connections = Gauge(
     'Number of active connections'
 )
 
+route_counter = Counter(
+    'gateway_route_requests_total',
+    'Total routed service requests',
+    ['service', 'strategy', 'status']
+)
+
+route_duration = Histogram(
+    'gateway_route_duration_seconds',
+    'Routed request duration in seconds',
+    ['service', 'strategy'],
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5)
+)
+
+route_error_counter = Counter(
+    'gateway_route_errors_total',
+    'Total routed request errors',
+    ['service', 'error_type']
+)
+
 
 class MetricsCollector:
     """Centralized metrics collector."""
-    
+
     @staticmethod
     def record_request(method: str, endpoint: str, status_code: int, latency: float):
         """Record an HTTP request."""
@@ -46,12 +66,12 @@ class MetricsCollector:
                 endpoint=endpoint,
                 status_code=status_code
             ).inc()
-            
+
             request_latency.labels(
                 method=method,
                 endpoint=endpoint
             ).observe(latency)
-            
+
             if status_code >= 400:
                 error_counter.labels(
                     endpoint=endpoint,
@@ -59,7 +79,7 @@ class MetricsCollector:
                 ).inc()
         except Exception as e:
             logger.error(f"Failed to record metrics: {e}")
-    
+
     @staticmethod
     def record_error(endpoint: str, error_type: str):
         """Record an error."""
@@ -70,7 +90,7 @@ class MetricsCollector:
             ).inc()
         except Exception as e:
             logger.error(f"Failed to record error metric: {e}")
-    
+
     @staticmethod
     def increment_active_connections():
         """Increment active connections."""
@@ -78,7 +98,7 @@ class MetricsCollector:
             active_connections.inc()
         except Exception as e:
             logger.error(f"Failed to increment active connections: {e}")
-    
+
     @staticmethod
     def decrement_active_connections():
         """Decrement active connections."""
@@ -86,6 +106,33 @@ class MetricsCollector:
             active_connections.dec()
         except Exception as e:
             logger.error(f"Failed to decrement active connections: {e}")
+
+    @staticmethod
+    def record_route(service: str, strategy: str, status: str, duration_seconds: float):
+        """Record service route RED metrics."""
+        try:
+            route_counter.labels(
+                service=service,
+                strategy=strategy,
+                status=status,
+            ).inc()
+            route_duration.labels(
+                service=service,
+                strategy=strategy,
+            ).observe(max(0.0, duration_seconds))
+        except Exception as e:
+            logger.error(f"Failed to record route metrics: {e}")
+
+    @staticmethod
+    def record_route_error(service: str, error_type: str):
+        """Record routed request error metrics."""
+        try:
+            route_error_counter.labels(
+                service=service,
+                error_type=error_type,
+            ).inc()
+        except Exception as e:
+            logger.error(f"Failed to record route error metrics: {e}")
 
 
 def metrics_endpoint() -> Response:
