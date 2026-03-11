@@ -2,15 +2,28 @@ import { useState } from "react";
 import { login, me } from "../services/auth";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../hooks/useAuth";
-import { Typography, Alert } from "@mui/material";
-import "./Login.css";
+import {
+  Typography,
+  Alert,
+  Box,
+  TextField,
+  Button,
+  Checkbox,
+  FormControlLabel,
+  InputAdornment,
+  IconButton,
+  Paper,
+  Avatar,
+  Link as MuiLink,
+} from "@mui/material";
+import { Visibility, VisibilityOff, Person } from "@mui/icons-material";
 
 export default function Login() {
-  let hashedPassword = atob(localStorage.getItem("-prince") || "");
   const [email, setEmail] = useState(
     atob(localStorage.getItem("-princem") || ""),
   );
-  const [password, setPassword] = useState(hashedPassword);
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [remember, setRemember] = useState(
     localStorage.getItem("remember") === "1",
@@ -28,7 +41,6 @@ export default function Login() {
     setError(null);
     setFieldErrors({});
 
-    // client-side validation
     const errs: { email?: string; password?: string } = {};
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
       errs.email = "Enter a valid email";
@@ -45,22 +57,18 @@ export default function Login() {
       if (r.error) {
         setError(r.error);
       } else {
-        // use auth.me service which attaches Authorization header via axios interceptor
         const js = await me();
         setProfile({ email: js.email });
-        // persist remember preference before login so token setter can persist tokens
         if (remember) {
           localStorage.setItem("remember", "1");
           localStorage.setItem("-princem", btoa(email));
-          localStorage.setItem("-prince", btoa(password));
         } else {
           localStorage.removeItem("remember");
           localStorage.removeItem("-princem");
-          localStorage.removeItem("-prince");
         }
         navigate("/dashboard");
       }
-    } catch (e) {
+    } catch {
       setError("Login failed");
     } finally {
       setLoading(false);
@@ -68,100 +76,158 @@ export default function Login() {
   }
 
   return (
-    <div className="login-page">
-      <div className="login-card">
-        <div className="avatar" aria-hidden>
-          <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-            <path d="M12 12c2.7 0 4.9-2.2 4.9-4.9S14.7 2.2 12 2.2 7.1 4.4 7.1 7.1 9.3 12 12 12zm0 2.2c-3.3 0-9.8 1.7-9.8 5v1.6h19.6V19.2c0-3.3-6.5-5-9.8-5z" />
-          </svg>
-        </div>
+    <Box
+      sx={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: (theme) =>
+          theme.palette.mode === "dark"
+            ? `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${theme.palette.primary.dark}22 100%)`
+            : `linear-gradient(135deg, #ffd4d1 0%, #fff3e6 40%, #f1e9ff 100%)`,
+        p: 2,
+      }}
+    >
+      <Paper
+        elevation={3}
+        sx={{
+          width: { xs: "100%", sm: 400 },
+          maxWidth: 400,
+          p: { xs: 3, sm: 4 },
+          pt: { xs: 7, sm: 8 },
+          borderRadius: 3,
+          position: "relative",
+          textAlign: "center",
+        }}
+      >
+        <Avatar
+          sx={{
+            width: 80,
+            height: 80,
+            bgcolor: "primary.main",
+            position: "absolute",
+            top: -40,
+            left: "50%",
+            transform: "translateX(-50%)",
+            boxShadow: 3,
+          }}
+        >
+          <Person sx={{ fontSize: 40 }} />
+        </Avatar>
 
-        <Typography variant="h6" style={{ marginBottom: 6, color: "#6e6e6e" }}>
+        <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
           LOGIN
         </Typography>
 
-        {error && <Alert severity="error">{error}</Alert>}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
 
-        <form onSubmit={submit} className="login-form" aria-label="login form">
-          <div className="input-row">
-            <span className="icon">👤</span>
-            <input
-              aria-label="email"
-              placeholder="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+        <Box
+          component="form"
+          onSubmit={submit}
+          aria-label="login form"
+          sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+        >
+          <TextField
+            label="Email"
+            placeholder="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            error={!!fieldErrors.email}
+            helperText={fieldErrors.email}
+            fullWidth
+            size="small"
+          />
+
+          <TextField
+            label="Password"
+            placeholder="password"
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            error={!!fieldErrors.password}
+            helperText={fieldErrors.password}
+            fullWidth
+            size="small"
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label={
+                        showPassword ? "Hide password" : "Show password"
+                      }
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      size="small"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  size="small"
+                />
+              }
+              label={
+                <Typography variant="body2" color="text.secondary">
+                  Remember me
+                </Typography>
+              }
             />
-          </div>
-          {fieldErrors.email && (
-            <div className="error">{fieldErrors.email}</div>
-          )}
-
-          <div className="input-row">
-            <span className="icon">🔒</span>
-            <input
-              aria-label="password"
-              placeholder="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          {fieldErrors.password && (
-            <div className="error">{fieldErrors.password}</div>
-          )}
-
-          <div className="options">
-            <label>
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-              />
-              <span style={{ fontSize: 13, color: "#777" }}>Remember me</span>
-            </label>
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate("/reset-password");
-              }}
+            <MuiLink
+              component="button"
+              type="button"
+              variant="body2"
+              onClick={() => navigate("/reset-password")}
+              sx={{ textDecoration: "none" }}
             >
               Forgot Password?
-            </a>
-          </div>
+            </MuiLink>
+          </Box>
 
-          <button className="login-button" type="submit" disabled={loading}>
+          <Button
+            type="submit"
+            variant="contained"
+            fullWidth
+            disabled={loading}
+            sx={{ py: 1.2, fontWeight: 600, borderRadius: 6 }}
+          >
             {loading ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
+          </Button>
+        </Box>
 
-        <div
-          style={{
-            marginTop: "16px",
-            textAlign: "center",
-            fontSize: "14px",
-            color: "#777",
-          }}
-        >
-          <Typography variant="body2">
-            Are you new?{" "}
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate("/register");
-              }}
-              style={{
-                color: "#1976d2",
-                textDecoration: "none",
-                fontWeight: 500,
-              }}
-            >
-              Register here
-            </a>
-          </Typography>
-        </div>
-      </div>
-    </div>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Are you new?{" "}
+          <MuiLink
+            component="button"
+            type="button"
+            onClick={() => navigate("/register")}
+            sx={{ fontWeight: 500 }}
+          >
+            Register here
+          </MuiLink>
+        </Typography>
+      </Paper>
+    </Box>
   );
 }

@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { verifyOtp } from '../services/auth';
 import { useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Typography,
+  TextField,
+  Button,
+  Alert,
+  Paper,
+} from '@mui/material';
 
 export default function VerifyOtp() {
   const [code, setCode] = useState('');
@@ -13,7 +21,6 @@ export default function VerifyOtp() {
     e.preventDefault();
     setError(null);
     setMessage(null);
-    // client-side guard: require exactly 6 digits
     if (code.length !== 6) {
       setError('Please enter the 6-digit code');
       return;
@@ -24,10 +31,9 @@ export default function VerifyOtp() {
       if (r && r.error) setError(r.error);
       else {
         setMessage(r.message || 'OTP verified');
-        // navigate to dashboard or login
         navigate('/login');
       }
-    } catch (e) {
+    } catch {
       setError('Verification failed');
     } finally {
       setLoading(false);
@@ -35,58 +41,104 @@ export default function VerifyOtp() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(90deg,#1fb6ff,#0066ff)' }}>
-      <div style={{ maxWidth: 900, width: '100%', padding: 32, display: 'flex', gap: 24, alignItems: 'center', color: '#fff' }}>
-        <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 40, margin: 0 }}>Authentication Code</h1>
-          <p style={{ opacity: 0.9 }}>Enter the one-time code sent to your email or phone.</p>
-        </div>
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: (theme) =>
+          theme.palette.mode === 'dark'
+            ? `linear-gradient(90deg, ${theme.palette.primary.dark}, ${theme.palette.info.dark})`
+            : `linear-gradient(90deg, #1fb6ff, #0066ff)`,
+        p: 2,
+      }}
+    >
+      <Box
+        sx={{
+          maxWidth: 900,
+          width: '100%',
+          p: { xs: 2, sm: 4 },
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          gap: 3,
+          alignItems: 'center',
+          color: '#fff',
+        }}
+      >
+        <Box sx={{ flex: 1 }}>
+          <Typography
+            variant="h3"
+            sx={{ fontWeight: 700, color: 'inherit', mb: 1 }}
+          >
+            Authentication Code
+          </Typography>
+          <Typography variant="body1" sx={{ opacity: 0.9, color: 'inherit' }}>
+            Enter the one-time code sent to your email or phone.
+          </Typography>
+        </Box>
 
-        <form onSubmit={submit} noValidate style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <input
+        <Paper
+          component="form"
+          onSubmit={submit}
+          noValidate
+          elevation={0}
+          sx={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.5,
+            bgcolor: 'transparent',
+          }}
+        >
+          <TextField
             aria-label="OTP code"
             value={code}
             onChange={(e) => {
-              // accept digits only, limit to 6 characters
               const digits = e.target.value.replace(/\D/g, '').slice(0, 6);
               setCode(digits);
             }}
             placeholder="- - - - - -"
             inputMode="numeric"
-            maxLength={6}
-            style={{
-              padding: '18px 24px',
-              fontSize: 24,
-              borderRadius: 6,
-              border: 'none',
-              width: '100%',
-              letterSpacing: '18px',
-              textAlign: 'center',
-              background: 'rgba(255,255,255,0.06)',
-              color: '#fff',
-              outline: 'none',
+            slotProps={{
+              htmlInput: {
+                maxLength: 6,
+                style: {
+                  letterSpacing: '18px',
+                  textAlign: 'center',
+                  fontSize: 24,
+                  padding: '14px 20px',
+                  color: '#fff',
+                },
+              },
             }}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                bgcolor: 'rgba(255,255,255,0.08)',
+                '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.4)' },
+                '&.Mui-focused fieldset': { borderColor: '#fff' },
+              },
+            }}
+            fullWidth
           />
-          <button
+          <Button
             type="submit"
-            style={{
-              padding: '12px 20px',
-              background: '#08306b',
-              color: '#fff',
-              fontWeight: 700,
-              border: 'none',
-              borderRadius: 6,
-              opacity: loading || code.length !== 6 ? 0.6 : 1,
-              cursor: loading || code.length !== 6 ? 'not-allowed' : 'pointer',
-            }}
+            variant="contained"
             disabled={loading || code.length !== 6}
+            sx={{
+              py: 1.5,
+              fontWeight: 700,
+              bgcolor: 'rgba(8,48,107,0.9)',
+              '&:hover': { bgcolor: 'rgba(8,48,107,1)' },
+            }}
           >
             {loading ? 'Verifying…' : 'VERIFY'}
-          </button>
-          {error && <div style={{ color: '#ffcccc' }}>{error}</div>}
-          {message && <div style={{ color: '#ccffcc' }}>{message}</div>}
-        </form>
-      </div>
-    </div>
+          </Button>
+          {error && <Alert severity="error">{error}</Alert>}
+          {message && <Alert severity="success">{message}</Alert>}
+        </Paper>
+      </Box>
+    </Box>
   );
 }

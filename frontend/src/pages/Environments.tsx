@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Container,
@@ -25,37 +25,32 @@ import {
 import { Add as AddIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { apiKeysService } from "../services/apiKeys";
 import type { Environment } from "../services/apiKeys";
+import { useQueryCache } from "../hooks/useQueryCache";
+import { TableSkeleton } from "../components/Skeletons";
 
 const DEFAULT_SLUGS = ["production", "staging", "testing", "development"];
 
 export const Environments: React.FC = () => {
-  const [environments, setEnvironments] = useState<Environment[]>([]);
-  const [loading, setLoading] = useState(false);
+  const {
+    data: environments = [],
+    loading,
+    error: fetchError,
+    refetch: refetchEnvironments,
+  } = useQueryCache<Environment[]>("environments", () =>
+    apiKeysService.listEnvironments(),
+  );
+  const [mutating, setMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "" });
 
-  useEffect(() => {
-    loadEnvironments();
-  }, []);
-
-  const loadEnvironments = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await apiKeysService.listEnvironments();
-      setEnvironments(data);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to load environments");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const displayError = fetchError || error;
+  const isDisabled = loading || mutating;
 
   const handleCreate = async () => {
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       await apiKeysService.createEnvironment({
         name: formData.name.trim(),
@@ -64,11 +59,11 @@ export const Environments: React.FC = () => {
       setSuccess("Environment created successfully");
       setFormData({ name: "", description: "" });
       setCreateOpen(false);
-      await loadEnvironments();
+      await refetchEnvironments();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to create environment");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
@@ -81,15 +76,15 @@ export const Environments: React.FC = () => {
       return;
 
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       await apiKeysService.deleteEnvironment(env.id);
       setSuccess(`"${env.name}" environment deleted`);
-      await loadEnvironments();
+      await refetchEnvironments();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to delete environment");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
@@ -111,7 +106,7 @@ export const Environments: React.FC = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setCreateOpen(true)}
-            disabled={loading}
+            disabled={isDisabled}
           >
             New Environment
           </Button>
@@ -121,9 +116,9 @@ export const Environments: React.FC = () => {
         </Typography>
       </Box>
 
-      {error && (
+      {displayError && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
+          {displayError}
         </Alert>
       )}
       {success && (
@@ -137,83 +132,87 @@ export const Environments: React.FC = () => {
       )}
 
       <Card>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Slug</TableCell>
-                <TableCell>Description</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {environments.length === 0 ? (
+        {loading ? (
+          <TableSkeleton columns={5} rows={3} />
+        ) : (
+          <TableContainer>
+            <Table>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      No environments yet. Default environments will be created
-                      on server startup.
-                    </Typography>
-                  </TableCell>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Slug</TableCell>
+                  <TableCell>Description</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell align="right">Actions</TableCell>
                 </TableRow>
-              ) : (
-                environments.map((env) => (
-                  <TableRow key={env.id} hover>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={500}>
-                        {env.name}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        fontFamily="monospace"
-                        color="text.secondary"
-                      >
-                        {env.slug}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
+              </TableHead>
+              <TableBody>
+                {environments.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
                       <Typography variant="body2" color="text.secondary">
-                        {env.description || "—"}
+                        No environments yet. Default environments will be
+                        created on server startup.
                       </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={isDefault(env) ? "Default" : "Custom"}
-                        size="small"
-                        color={isDefault(env) ? "primary" : "default"}
-                        variant={isDefault(env) ? "filled" : "outlined"}
-                      />
-                    </TableCell>
-                    <TableCell align="right">
-                      <Tooltip
-                        title={
-                          isDefault(env)
-                            ? "Default environments cannot be deleted"
-                            : "Delete"
-                        }
-                      >
-                        <span>
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => handleDelete(env)}
-                            disabled={loading || isDefault(env)}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                ) : (
+                  environments.map((env) => (
+                    <TableRow key={env.id} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={500}>
+                          {env.name}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          fontFamily="monospace"
+                          color="text.secondary"
+                        >
+                          {env.slug}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {env.description || "—"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={isDefault(env) ? "Default" : "Custom"}
+                          size="small"
+                          color={isDefault(env) ? "primary" : "default"}
+                          variant={isDefault(env) ? "filled" : "outlined"}
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Tooltip
+                          title={
+                            isDefault(env)
+                              ? "Default environments cannot be deleted"
+                              : "Delete"
+                          }
+                        >
+                          <span>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleDelete(env)}
+                              disabled={isDisabled || isDefault(env)}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </Card>
 
       {/* Create Environment Dialog */}

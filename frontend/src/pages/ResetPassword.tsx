@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { resetPassword } from "../services/auth";
-import { Container, TextField, Button, Typography, Alert } from "@mui/material";
+import { TextField, Button, Typography, Alert, Box } from "@mui/material";
+import PageWrapper from "../components/PageWrapper";
 
 export default function ResetPassword() {
   const [email, setEmail] = useState("");
@@ -17,7 +18,7 @@ export default function ResetPassword() {
       const r = await resetPassword(email);
       if (r && r.error) setError(r.error);
       else setMessage(r.message || "Password reset link sent");
-    } catch (e) {
+    } catch {
       setError("Failed to send reset link");
     } finally {
       setLoading(false);
@@ -25,16 +26,34 @@ export default function ResetPassword() {
   }
 
   return (
-    <Container maxWidth="sm" style={{ paddingTop: 24 }}>
+    <PageWrapper maxWidth="sm">
       <Typography variant="h5">Reset password</Typography>
-      {message && <Alert severity="success">{message}</Alert>}
-      {error && <Alert severity="error">{error}</Alert>}
-      <form onSubmit={submit} style={{ display: "grid", gap: 12, marginTop: 12 }}>
-        <TextField label="Email" placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      {message && (
+        <Alert severity="success" sx={{ mt: 1 }}>
+          {message}
+        </Alert>
+      )}
+      {error && (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          {error}
+        </Alert>
+      )}
+      <Box
+        component="form"
+        onSubmit={submit}
+        sx={{ display: "grid", gap: 1.5, mt: 1.5 }}
+      >
+        <TextField
+          label="Email"
+          placeholder="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          fullWidth
+        />
         <Button type="submit" variant="contained" disabled={loading}>
           {loading ? "Sending…" : "Send reset link"}
         </Button>
-      </form>
-    </Container>
+      </Box>
+    </PageWrapper>
   );
 }

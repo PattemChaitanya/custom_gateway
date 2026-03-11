@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Container,
@@ -32,12 +32,10 @@ import type {
   AuditLogFilters,
   AuditLogStats,
 } from "../services/auditLogs";
+import { useQueryCache } from "../hooks/useQueryCache";
+import { TableSkeleton, StatCardsSkeleton } from "../components/Skeletons";
 
 export const AuditLogs: React.FC = () => {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [stats, setStats] = useState<AuditLogStats | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
 
@@ -49,50 +47,36 @@ export const AuditLogs: React.FC = () => {
     limit: 100,
   });
 
-  // Debounce filter changes to avoid API spam
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const debouncedLoad = useCallback(() => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      loadLogs();
-      loadStats();
-    }, 400);
-  }, []);
+  // Debounce filters for cache key
+  const [debouncedFilters, setDebouncedFilters] = useState(filters);
 
   useEffect(() => {
-    debouncedLoad();
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
+    const timer = setTimeout(() => setDebouncedFilters(filters), 400);
+    return () => clearTimeout(timer);
   }, [filters]);
 
-  const loadLogs = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await auditLogsService.list(filters);
-      setLogs(data);
-      setPage(0);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to load audit logs");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data: logs = [],
+    loading: logsLoading,
+    error,
+    refetch: refetchLogs,
+  } = useQueryCache<AuditLog[]>(
+    `audit-logs-${JSON.stringify(debouncedFilters)}`,
+    () => auditLogsService.list(debouncedFilters),
+  );
 
-  const loadStats = async () => {
-    try {
-      const data = await auditLogsService.getStatistics();
-      setStats(data);
-    } catch (err: any) {
-      console.error("Failed to load statistics:", err);
-    }
-  };
+  const {
+    data: stats,
+    loading: statsLoading,
+    refetch: refetchStats,
+  } = useQueryCache<AuditLogStats>("audit-stats", () =>
+    auditLogsService.getStatistics(),
+  );
+
+  // Reset page when logs data changes
+  useEffect(() => {
+    setPage(0);
+  }, [logs]);
 
   const handleFilterChange = (key: keyof AuditLogFilters, value: any) => {
     setFilters({ ...filters, [key]: value });
@@ -159,8 +143,11 @@ export const AuditLogs: React.FC = () => {
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
-            onClick={loadLogs}
-            disabled={loading}
+            onClick={() => {
+              refetchLogs();
+              refetchStats();
+            }}
+            disabled={logsLoading}
           >
             Refresh
           </Button>
@@ -171,45 +158,49 @@ export const AuditLogs: React.FC = () => {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+        <Alert severity="error" sx={{ mb: 3 }}>
           {error}
         </Alert>
       )}
 
       {/* Statistics Cards */}
-      {stats && (
-        <Grid container spacing={3} sx={{ mb: 3 }}>
-          <Grid item xs={12} sm={4}>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="h6" color="primary" gutterBottom>
-                Total Events
-              </Typography>
-              <Typography variant="h3" fontWeight={700}>
-                {stats.total_logs.toLocaleString()}
-              </Typography>
-            </Paper>
+      {statsLoading ? (
+        <StatCardsSkeleton count={3} />
+      ) : (
+        stats && (
+          <Grid container spacing={3} sx={{ mb: 3 }}>
+            <Grid item xs={12} sm={4}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6" color="primary" gutterBottom>
+                  Total Events
+                </Typography>
+                <Typography variant="h3" fontWeight={700}>
+                  {stats.total_logs.toLocaleString()}
+                </Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6" color="primary" gutterBottom>
+                  Event Types
+                </Typography>
+                <Typography variant="h3" fontWeight={700}>
+                  {Object.keys(stats.logs_by_type).length}
+                </Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6" color="primary" gutterBottom>
+                  Active Users
+                </Typography>
+                <Typography variant="h3" fontWeight={700}>
+                  {Object.keys(stats.logs_by_user).length}
+                </Typography>
+              </Paper>
+            </Grid>
           </Grid>
-          <Grid item xs={12} sm={4}>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="h6" color="primary" gutterBottom>
-                Event Types
-              </Typography>
-              <Typography variant="h3" fontWeight={700}>
-                {Object.keys(stats.logs_by_type).length}
-              </Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={4}>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="h6" color="primary" gutterBottom>
-                Active Users
-              </Typography>
-              <Typography variant="h3" fontWeight={700}>
-                {Object.keys(stats.logs_by_user).length}
-              </Typography>
-            </Paper>
-          </Grid>
-        </Grid>
+        )
       )}
 
       {/* Filters */}
@@ -282,104 +273,115 @@ export const AuditLogs: React.FC = () => {
 
       {/* Logs Table */}
       <Card>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Timestamp</TableCell>
-                <TableCell>Action</TableCell>
-                <TableCell>User ID</TableCell>
-                <TableCell>Resource</TableCell>
-                <TableCell>IP Address</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Details</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {displayedLogs.length === 0 ? (
+        {logsLoading ? (
+          <TableSkeleton columns={7} rows={5} />
+        ) : (
+          <TableContainer>
+            <Table>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      No audit logs found matching the current filters.
-                    </Typography>
-                  </TableCell>
+                  <TableCell>Timestamp</TableCell>
+                  <TableCell>Action</TableCell>
+                  <TableCell>User ID</TableCell>
+                  <TableCell>Resource</TableCell>
+                  <TableCell>IP Address</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Details</TableCell>
                 </TableRow>
-              ) : (
-                displayedLogs.map((log) => (
-                  <TableRow key={log.id} hover>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontSize: "0.75rem" }}>
-                        {formatDate(log.timestamp)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={log.action}
-                        size="small"
-                        sx={{ fontFamily: "monospace", fontSize: "0.7rem" }}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" fontFamily="monospace">
-                        {log.user_id || "N/A"}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
+              </TableHead>
+              <TableBody>
+                {displayedLogs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
                       <Typography variant="body2" color="text.secondary">
-                        {log.resource_type && log.resource_id
-                          ? `${log.resource_type}:${log.resource_id}`
-                          : "N/A"}
+                        No audit logs found matching the current filters.
                       </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        fontFamily="monospace"
-                        sx={{ fontSize: "0.75rem" }}
-                      >
-                        {log.ip_address || "N/A"}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        {getStatusIcon(log.status)}
-                        <Chip
-                          label={log.status}
-                          color={getStatusColor(log.status)}
-                          size="small"
-                        />
-                      </Stack>
-                    </TableCell>
-                    <TableCell>
-                      {log.error_message ? (
-                        <Typography
-                          variant="body2"
-                          color="error"
-                          sx={{ fontSize: "0.75rem" }}
-                        >
-                          {log.error_message}
-                        </Typography>
-                      ) : log.metadata_json ? (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{ fontSize: "0.75rem" }}
-                        >
-                          {Object.keys(log.metadata_json).length} metadata
-                          fields
-                        </Typography>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          -
-                        </Typography>
-                      )}
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                ) : (
+                  displayedLogs.map((log) => (
+                    <TableRow key={log.id} hover>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          sx={{ fontSize: "0.75rem" }}
+                        >
+                          {formatDate(log.timestamp)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={log.action}
+                          size="small"
+                          sx={{ fontFamily: "monospace", fontSize: "0.7rem" }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" fontFamily="monospace">
+                          {log.user_id || "N/A"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {log.resource_type && log.resource_id
+                            ? `${log.resource_type}:${log.resource_id}`
+                            : "N/A"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          fontFamily="monospace"
+                          sx={{ fontSize: "0.75rem" }}
+                        >
+                          {log.ip_address || "N/A"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          alignItems="center"
+                        >
+                          {getStatusIcon(log.status)}
+                          <Chip
+                            label={log.status}
+                            color={getStatusColor(log.status)}
+                            size="small"
+                          />
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        {log.error_message ? (
+                          <Typography
+                            variant="body2"
+                            color="error"
+                            sx={{ fontSize: "0.75rem" }}
+                          >
+                            {log.error_message}
+                          </Typography>
+                        ) : log.metadata_json ? (
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ fontSize: "0.75rem" }}
+                          >
+                            {Object.keys(log.metadata_json).length} metadata
+                            fields
+                          </Typography>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            -
+                          </Typography>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
         <TablePagination
           rowsPerPageOptions={[10, 25, 50, 100]}
           component="div"

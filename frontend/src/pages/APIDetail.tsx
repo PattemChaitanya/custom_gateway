@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { getAPI, type APIItem } from "../services/apis";
 import {
@@ -18,6 +18,8 @@ import {
   Chip,
   Alert,
 } from "@mui/material";
+import { useQueryCache } from "../hooks/useQueryCache";
+import { DetailPageSkeleton } from "../components/Skeletons";
 
 type Route = {
   path: string;
@@ -32,12 +34,34 @@ export default function APIDetail() {
   const params = useParams();
   const apiId = params.id ? Number(params.id) : null;
 
-  const [apiData, setApiData] = useState<APIItem | null>(null);
-  const [apiType, setApiType] = useState<string>("rest");
-  const [routes, setRoutes] = useState<Route[]>([]);
+  const {
+    data: apiData,
+    loading,
+    error,
+  } = useQueryCache<APIItem>(`api-${apiId}`, () => getAPI(apiId!), {
+    enabled: !!apiId,
+  });
+
+  const apiType = useMemo(() => {
+    if (!apiData) return "rest";
+    return apiData.config?._meta?.ui?.type || apiData.type || "rest";
+  }, [apiData]);
+
+  const routes = useMemo<Route[]>(() => {
+    if (!apiData?.config?.routes || !Array.isArray(apiData.config.routes)) {
+      return [{ path: "/", method: "GET", auth: "API Key" }];
+    }
+    return apiData.config.routes.map((r: any) => ({
+      path: r.path || r.resource || "/",
+      method: r.method || "GET",
+      auth: r.auth || "API Key",
+      integration: r.integration,
+      requestBodyModel: r.requestBodyModel || r.schema,
+      validation: r.validation,
+    }));
+  }, [apiData]);
+
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Testing state
   const [method, setMethod] = useState("POST");
@@ -49,53 +73,14 @@ export default function APIDetail() {
   const [latency, setLatency] = useState<number | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
 
-  // Fetch API data
+  // Select first route when routes change
   useEffect(() => {
-    if (!apiId) return;
-
-    (async () => {
-      try {
-        setLoading(true);
-        const data = await getAPI(apiId);
-        setApiData(data);
-
-        // Detect API type
-        const detectedType =
-          data.config?._meta?.ui?.type || data.type || "rest";
-        setApiType(detectedType);
-
-        // Extract routes from config
-        if (
-          data.config &&
-          data.config.routes &&
-          Array.isArray(data.config.routes)
-        ) {
-          const extractedRoutes = data.config.routes.map((r: any) => ({
-            path: r.path || r.resource || "/",
-            method: r.method || "GET",
-            auth: r.auth || "API Key",
-            integration: r.integration,
-            requestBodyModel: r.requestBodyModel || r.schema,
-            validation: r.validation,
-          }));
-          setRoutes(extractedRoutes);
-          if (extractedRoutes.length > 0) {
-            setSelectedRoute(extractedRoutes[0]);
-            setPath(extractedRoutes[0].path);
-            setMethod(extractedRoutes[0].method);
-          }
-        } else {
-          // Create default route
-          setRoutes([{ path: "/", method: "GET", auth: "API Key" }]);
-          setSelectedRoute({ path: "/", method: "GET", auth: "API Key" });
-        }
-      } catch (e: any) {
-        setError(e?.message ?? String(e));
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [apiId]);
+    if (routes.length > 0 && !selectedRoute) {
+      setSelectedRoute(routes[0]);
+      setPath(routes[0].path);
+      setMethod(routes[0].method);
+    }
+  }, [routes]);
 
   async function handleTest() {
     setResponse("");
@@ -159,11 +144,7 @@ export default function APIDetail() {
   };
 
   if (loading) {
-    return (
-      <Container maxWidth="lg" sx={{ py: 2 }}>
-        <Typography>Loading...</Typography>
-      </Container>
-    );
+    return <DetailPageSkeleton />;
   }
 
   if (error || !apiData) {

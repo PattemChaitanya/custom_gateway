@@ -48,27 +48,27 @@ export const getTheme = (mode: PaletteMode) => {
         "sans-serif",
       ].join(","),
       h1: {
-        fontSize: "2.5rem",
+        fontSize: "clamp(1.75rem, 1.5rem + 1.5vw, 2.5rem)",
         fontWeight: 700,
         lineHeight: 1.2,
       },
       h2: {
-        fontSize: "2rem",
+        fontSize: "clamp(1.5rem, 1.25rem + 1vw, 2rem)",
         fontWeight: 600,
         lineHeight: 1.3,
       },
       h3: {
-        fontSize: "1.75rem",
+        fontSize: "clamp(1.25rem, 1.1rem + 0.75vw, 1.75rem)",
         fontWeight: 600,
         lineHeight: 1.4,
       },
       h4: {
-        fontSize: "1.5rem",
+        fontSize: "clamp(1.125rem, 1rem + 0.5vw, 1.5rem)",
         fontWeight: 600,
         lineHeight: 1.4,
       },
       h5: {
-        fontSize: "1.25rem",
+        fontSize: "clamp(1rem, 0.9rem + 0.25vw, 1.25rem)",
         fontWeight: 600,
         lineHeight: 1.5,
       },

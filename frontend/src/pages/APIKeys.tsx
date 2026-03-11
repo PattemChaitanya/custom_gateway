@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Container,
@@ -40,10 +40,21 @@ import type {
   CreateAPIKeyRequest,
   Environment,
 } from "../services/apiKeys";
+import { useQueryCache } from "../hooks/useQueryCache";
+import { TableSkeleton } from "../components/Skeletons";
 
 export const APIKeys: React.FC = () => {
-  const [keys, setKeys] = useState<APIKey[]>([]);
-  const [loading, setLoading] = useState(false);
+  const {
+    data: keys = [],
+    loading,
+    error: fetchError,
+    refetch: refetchKeys,
+  } = useQueryCache<APIKey[]>("api-keys", () => apiKeysService.list());
+  const { data: environments = [] } = useQueryCache<Environment[]>(
+    "api-key-environments",
+    () => apiKeysService.listEnvironments(),
+  );
+  const [mutating, setMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -54,48 +65,23 @@ export const APIKeys: React.FC = () => {
   });
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
-  const [environments, setEnvironments] = useState<Environment[]>([]);
 
-  useEffect(() => {
-    loadKeys();
-    loadEnvironments();
-  }, []);
-
-  const loadEnvironments = async () => {
-    try {
-      const data = await apiKeysService.listEnvironments();
-      setEnvironments(data);
-    } catch {
-      // Environments are optional — silently ignore
-    }
-  };
-
-  const loadKeys = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await apiKeysService.list();
-      setKeys(data);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to load API keys");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const displayError = fetchError || error;
+  const isDisabled = loading || mutating;
 
   const handleCreate = async () => {
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       const result = await apiKeysService.create(newKeyData);
       setGeneratedKey(result.key);
       setSuccess("API key created successfully");
-      await loadKeys();
+      await refetchKeys();
       setNewKeyData({ label: "", scopes: "", expires_in_days: 7 });
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to create API key");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
@@ -103,15 +89,15 @@ export const APIKeys: React.FC = () => {
     if (!confirm("Are you sure you want to revoke this API key?")) return;
 
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       await apiKeysService.revoke(keyId);
       setSuccess("API key revoked successfully");
-      await loadKeys();
+      await refetchKeys();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to revoke API key");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
@@ -124,15 +110,15 @@ export const APIKeys: React.FC = () => {
       return;
 
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       await apiKeysService.delete(keyId);
       setSuccess("API key deleted successfully");
-      await loadKeys();
+      await refetchKeys();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to delete API key");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
@@ -173,7 +159,7 @@ export const APIKeys: React.FC = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setCreateDialogOpen(true)}
-            disabled={loading}
+            disabled={isDisabled}
           >
             Generate API Key
           </Button>
@@ -184,9 +170,9 @@ export const APIKeys: React.FC = () => {
         </Typography>
       </Box>
 
-      {error && (
+      {displayError && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
+          {displayError}
         </Alert>
       )}
 
@@ -201,150 +187,157 @@ export const APIKeys: React.FC = () => {
       )}
 
       <Card>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Label</TableCell>
-                <TableCell>Key Preview</TableCell>
-                <TableCell>Scopes</TableCell>
-                <TableCell>Environment</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Created</TableCell>
-                <TableCell>Expires</TableCell>
-                <TableCell>Last Used</TableCell>
-                <TableCell>Usage Count</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {keys.length === 0 ? (
+        {loading ? (
+          <TableSkeleton columns={10} rows={3} />
+        ) : (
+          <TableContainer>
+            <Table>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      No API keys yet. Create your first API key to get started.
-                    </Typography>
-                  </TableCell>
+                  <TableCell>Label</TableCell>
+                  <TableCell>Key Preview</TableCell>
+                  <TableCell>Scopes</TableCell>
+                  <TableCell>Environment</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Created</TableCell>
+                  <TableCell>Expires</TableCell>
+                  <TableCell>Last Used</TableCell>
+                  <TableCell>Usage Count</TableCell>
+                  <TableCell align="right">Actions</TableCell>
                 </TableRow>
-              ) : (
-                keys.map((key) => (
-                  <TableRow key={key.id} hover>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={500}>
-                        {key.label}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                      >
-                        <Typography
-                          variant="body2"
-                          fontFamily="monospace"
-                          sx={{ fontSize: "0.75rem" }}
-                        >
-                          {key.key_preview}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
+              </TableHead>
+              <TableBody>
+                {keys.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
                       <Typography variant="body2" color="text.secondary">
-                        {key.scopes || "N/A"}
+                        No API keys yet. Create your first API key to get
+                        started.
                       </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {key.environment_id
-                          ? (environments.find(
-                              (e) => e.id === key.environment_id,
-                            )?.name ?? `#${key.environment_id}`)
-                          : "—"}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={
-                          key.revoked
-                            ? "Revoked"
-                            : isExpired(key.expires_at)
-                              ? "Expired"
-                              : "Active"
-                        }
-                        color={
-                          key.revoked
-                            ? "error"
-                            : isExpired(key.expires_at)
-                              ? "warning"
-                              : "success"
-                        }
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ fontSize: "0.75rem" }}
-                      >
-                        {formatDate(key.created_at)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ fontSize: "0.75rem" }}
-                      >
-                        {formatDate(key.expires_at)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ fontSize: "0.75rem" }}
-                      >
-                        {formatDate(key.last_used_at)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{key.usage_count}</Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        justifyContent="flex-end"
-                      >
-                        {!key.revoked && (
-                          <Tooltip title="Revoke">
-                            <IconButton
-                              size="small"
-                              onClick={() => handleRevoke(key.id)}
-                              disabled={loading}
-                            >
-                              <BlockIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                        <Tooltip title="Delete">
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => handleDelete(key.id)}
-                            disabled={loading}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                ) : (
+                  keys.map((key) => (
+                    <TableRow key={key.id} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={500}>
+                          {key.label}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                        >
+                          <Typography
+                            variant="body2"
+                            fontFamily="monospace"
+                            sx={{ fontSize: "0.75rem" }}
+                          >
+                            {key.key_preview}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {key.scopes || "N/A"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {key.environment_id
+                            ? (environments.find(
+                                (e) => e.id === key.environment_id,
+                              )?.name ?? `#${key.environment_id}`)
+                            : "—"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={
+                            key.revoked
+                              ? "Revoked"
+                              : isExpired(key.expires_at)
+                                ? "Expired"
+                                : "Active"
+                          }
+                          color={
+                            key.revoked
+                              ? "error"
+                              : isExpired(key.expires_at)
+                                ? "warning"
+                                : "success"
+                          }
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ fontSize: "0.75rem" }}
+                        >
+                          {formatDate(key.created_at)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ fontSize: "0.75rem" }}
+                        >
+                          {formatDate(key.expires_at)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ fontSize: "0.75rem" }}
+                        >
+                          {formatDate(key.last_used_at)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {key.usage_count}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          justifyContent="flex-end"
+                        >
+                          {!key.revoked && (
+                            <Tooltip title="Revoke">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleRevoke(key.id)}
+                                disabled={isDisabled}
+                              >
+                                <BlockIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                          <Tooltip title="Delete">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleDelete(key.id)}
+                              disabled={isDisabled}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </Card>
 
       {/* Create API Key Dialog */}

@@ -1,39 +1,43 @@
 import { logout } from "../services/auth";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../hooks/useAuth";
-import { Container, Typography, Button } from "@mui/material";
+import { Typography, Button, Box, CircularProgress } from "@mui/material";
+import PageWrapper from "../components/PageWrapper";
 
 export default function Dashboard() {
-  // Profile is already loaded by App.tsx + ProtectedRoute — no need to refetch
   const profile = useAuthStore((s) => s.profile);
   const navigate = useNavigate();
 
   return (
-    <Container maxWidth="md" style={{ paddingTop: 24 }}>
+    <PageWrapper maxWidth="md">
       <Typography variant="h5">Dashboard</Typography>
       {profile ? (
-        <div>
+        <Box sx={{ mt: 2 }}>
           <Typography>Welcome, {profile.email}</Typography>
-          <Button
-            variant="contained"
-            style={{ marginLeft: 12 }}
-            onClick={() => navigate("/apis")}
-          >
-            Manage APIs
-          </Button>
-          <Button
-            variant="outlined"
-            onClick={async () => {
-              await logout();
-              navigate("/login");
-            }}
-          >
-            Logout
-          </Button>
-        </div>
+          <Box sx={{ display: "flex", gap: 1.5, mt: 2, flexWrap: "wrap" }}>
+            <Button
+              variant="contained"
+              onClick={() => navigate("/apis")}
+            >
+              Manage APIs
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={async () => {
+                await logout();
+                navigate("/login");
+              }}
+            >
+              Logout
+            </Button>
+          </Box>
+        </Box>
       ) : (
-        <Typography>Loading...</Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 2 }}>
+          <CircularProgress size={20} />
+          <Typography color="text.secondary">Loading...</Typography>
+        </Box>
       )}
-    </Container>
+    </PageWrapper>
   );
 }

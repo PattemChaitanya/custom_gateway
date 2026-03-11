@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Button,
@@ -18,7 +18,6 @@ import {
   TextField,
   Typography,
   Alert,
-  CircularProgress,
   FormControl,
   InputLabel,
   Select,
@@ -42,13 +41,24 @@ import userService, {
 } from "../services/users";
 import authorizersService, { type Role } from "../services/authorizers";
 import usePermissions from "../hooks/usePermissions";
+import { useQueryCache } from "../hooks/useQueryCache";
+import { TableSkeleton } from "../components/Skeletons";
 
 const Users: React.FC = () => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    data: users = [],
+    loading: usersLoading,
+    error: fetchError,
+    refetch: refetchUsers,
+  } = useQueryCache<User[]>("users", () => userService.listUsers());
+  const { data: roles = [] } = useQueryCache<Role[]>("user-roles", () =>
+    authorizersService.listRoles(),
+  );
+  const loading = usersLoading;
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const displayError = fetchError || error;
 
   // Edit user dialog
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -78,27 +88,6 @@ const Users: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
   const { hasPermission, isSuperuser } = usePermissions();
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const [usersData, rolesData] = await Promise.all([
-        userService.listUsers(),
-        authorizersService.listRoles(),
-      ]);
-      setUsers(usersData);
-      setRoles(rolesData);
-      setError(null);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleViewDetails = async (user: User) => {
     try {
@@ -133,7 +122,7 @@ const Users: React.FC = () => {
       await userService.updateUser(editingUser.id, editFormData);
       setSuccess("User updated successfully");
       handleCloseEditDialog();
-      loadData();
+      refetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to update user");
@@ -162,7 +151,7 @@ const Users: React.FC = () => {
       });
       setSuccess("Role assigned successfully");
       handleCloseAssignRoleDialog();
-      loadData();
+      refetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to assign role");
@@ -186,7 +175,7 @@ const Users: React.FC = () => {
       await userService.deleteUser(userToDelete.id);
       setSuccess("User deleted successfully");
       handleCloseDeleteDialog();
-      loadData();
+      refetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to delete user");
@@ -228,15 +217,19 @@ const Users: React.FC = () => {
               Add User
             </Button>
           ) : null}
-          <Button startIcon={<RefreshIcon />} onClick={loadData} sx={{ mr: 1 }}>
+          <Button
+            startIcon={<RefreshIcon />}
+            onClick={() => refetchUsers()}
+            sx={{ mr: 1 }}
+          >
             Refresh
           </Button>
         </Box>
       </Box>
 
-      {error && (
+      {displayError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
+          {displayError}
         </Alert>
       )}
 
@@ -251,9 +244,9 @@ const Users: React.FC = () => {
       )}
 
       {loading ? (
-        <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-          <CircularProgress />
-        </Box>
+        <Card>
+          <TableSkeleton columns={7} rows={4} />
+        </Card>
       ) : (
         <Card>
           <TableContainer>
@@ -499,7 +492,7 @@ const Users: React.FC = () => {
                 await userService.createUser(createFormData as any);
                 setSuccess("User created successfully");
                 setCreateDialogOpen(false);
-                loadData();
+                refetchUsers();
                 setTimeout(() => setSuccess(null), 3000);
               } catch (err: any) {
                 setError(err.response?.data?.detail || "Failed to create user");

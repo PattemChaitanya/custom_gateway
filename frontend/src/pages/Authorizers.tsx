@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Button,
@@ -15,7 +15,6 @@ import {
   TableRow,
   Typography,
   Alert,
-  CircularProgress,
   Tooltip,
 } from "@mui/material";
 import {
@@ -45,6 +44,8 @@ import {
   AssignRoleDialog,
   ConfirmDeleteDialog,
 } from "./Authorizers/index";
+import { useQueryCache } from "../hooks/useQueryCache";
+import { TableSkeleton } from "../components/Skeletons";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -70,12 +71,41 @@ function TabPanel(props: TabPanelProps) {
 
 const Authorizers: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [permissions, setPermissions] = useState<Permission[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Cached queries per tab
+  const {
+    data: roles = [],
+    loading: rolesLoading,
+    error: rolesError,
+    refetch: refetchRoles,
+  } = useQueryCache<Role[]>("authorizer-roles", () =>
+    authorizersService.listRoles(),
+  );
+  const {
+    data: permissions = [],
+    loading: permissionsLoading,
+    error: permissionsError,
+    refetch: refetchPermissions,
+  } = useQueryCache<Permission[]>("authorizer-permissions", () =>
+    authorizersService.listPermissions(),
+  );
+  const {
+    data: users = [],
+    loading: usersLoading,
+    error: usersError,
+    refetch: refetchUsers,
+  } = useQueryCache<User[]>("authorizer-users", () => userService.listUsers());
+
+  const loading =
+    tabValue === 0
+      ? rolesLoading
+      : tabValue === 1
+        ? permissionsLoading
+        : usersLoading;
+  const fetchError = rolesError || permissionsError || usersError;
+  const displayError = fetchError || error;
 
   // Role dialog state
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
@@ -117,41 +147,6 @@ const Authorizers: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
-  // Track which tabs have been loaded to avoid refetching on tab switch
-  const [loadedTabs, setLoadedTabs] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    if (!loadedTabs.has(tabValue)) {
-      loadData();
-    }
-  }, [tabValue]);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      if (tabValue === 0) {
-        const rolesData = await authorizersService.listRoles();
-        setRoles(rolesData);
-      } else if (tabValue === 1) {
-        const permissionsData = await authorizersService.listPermissions();
-        setPermissions(permissionsData);
-      } else if (tabValue === 2) {
-        const [usersData, rolesData] = await Promise.all([
-          userService.listUsers(),
-          authorizersService.listRoles(),
-        ]);
-        setUsers(usersData);
-        setRoles(rolesData);
-      }
-      setLoadedTabs((prev) => new Set(prev).add(tabValue));
-      setError(null);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Role handlers
   const handleOpenRoleDialog = (role?: Role) => {
     if (role) {
@@ -188,7 +183,7 @@ const Authorizers: React.FC = () => {
       }
 
       handleCloseRoleDialog();
-      loadData();
+      refetchRoles();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to save role");
@@ -203,7 +198,7 @@ const Authorizers: React.FC = () => {
       setSuccess("Role deleted successfully");
       setDeleteRoleDialogOpen(false);
       setRoleToDelete(null);
-      loadData();
+      refetchRoles();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to delete role");
@@ -231,7 +226,7 @@ const Authorizers: React.FC = () => {
       setSuccess("Permission created successfully");
 
       handleClosePermissionDialog();
-      loadData();
+      refetchPermissions();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to create permission");
@@ -246,7 +241,7 @@ const Authorizers: React.FC = () => {
       setSuccess("Permission deleted successfully");
       setDeletePermissionDialogOpen(false);
       setPermissionToDelete(null);
-      loadData();
+      refetchPermissions();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to delete permission");
@@ -287,7 +282,7 @@ const Authorizers: React.FC = () => {
       await userService.updateUser(editingUser.id, editFormData);
       setSuccess("User updated successfully");
       handleCloseEditDialog();
-      loadData();
+      refetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to update user");
@@ -316,7 +311,7 @@ const Authorizers: React.FC = () => {
       });
       setSuccess("Role assigned successfully");
       handleCloseAssignRoleDialog();
-      loadData();
+      refetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to assign role");
@@ -331,7 +326,7 @@ const Authorizers: React.FC = () => {
       setSuccess("User deleted successfully");
       setDeleteDialogOpen(false);
       setUserToDelete(null);
-      loadData();
+      refetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to delete user");
@@ -361,9 +356,9 @@ const Authorizers: React.FC = () => {
         </Button>
       </Box>
 
-      {error && (
+      {displayError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
+          {displayError}
         </Alert>
       )}
 
@@ -389,10 +384,8 @@ const Authorizers: React.FC = () => {
 
         {/* Roles Tab */}
         <TabPanel value={tabValue} index={0}>
-          {loading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-              <CircularProgress />
-            </Box>
+          {rolesLoading ? (
+            <TableSkeleton columns={5} rows={3} />
           ) : (
             <TableContainer>
               <Table>
@@ -467,10 +460,8 @@ const Authorizers: React.FC = () => {
 
         {/* Permissions Tab */}
         <TabPanel value={tabValue} index={1}>
-          {loading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-              <CircularProgress />
-            </Box>
+          {permissionsLoading ? (
+            <TableSkeleton columns={6} rows={3} />
           ) : (
             <TableContainer>
               <Table>
@@ -538,10 +529,8 @@ const Authorizers: React.FC = () => {
 
         {/* Users Tab */}
         <TabPanel value={tabValue} index={2}>
-          {loading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-              <CircularProgress />
-            </Box>
+          {usersLoading ? (
+            <TableSkeleton columns={5} rows={3} />
           ) : (
             <TableContainer>
               <Table>

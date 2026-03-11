@@ -16,38 +16,20 @@ import {
 } from "@mui/material";
 import { Edit as EditIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { listAPIs, deleteAPI, type APIItem } from "../services/apis";
+import { useQueryCache } from "../hooks/useQueryCache";
+import { TableSkeleton } from "../components/Skeletons";
 
 export default function Routes() {
   const navigate = useNavigate();
-  const [apis, setApis] = useState<APIItem[]>([]);
+  const { data: apis = [], loading, error: fetchError, refetch } = useQueryCache<APIItem[]>("apis", listAPIs);
   const [filteredApis, setFilteredApis] = useState<APIItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Fetch APIs from server
+  // Sync filteredApis when apis data changes
   useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      try {
-        setLoading(true);
-        const res = await listAPIs();
-        if (!mounted) return;
-        setApis(res);
-        setFilteredApis(res);
-      } catch (e: any) {
-        if (!mounted) return;
-        setError(e?.message ?? String(e));
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    setFilteredApis(apis);
+  }, [apis]);
 
   // Filter APIs based on search
   useEffect(() => {
@@ -64,6 +46,8 @@ export default function Routes() {
       ),
     );
   }, [searchTerm, apis]);
+
+  const displayError = fetchError || error;
 
   const handleCreate = () => {
     navigate(`/apis/create`);
@@ -83,8 +67,7 @@ export default function Routes() {
     }
     try {
       await deleteAPI(api.id);
-      setApis((prev) => prev.filter((a) => a.id !== api.id));
-      setFilteredApis((prev) => prev.filter((a) => a.id !== api.id));
+      await refetch();
     } catch (e: any) {
       alert(e?.message ?? String(e));
     }
@@ -125,9 +108,9 @@ export default function Routes() {
       </Box>
 
       {loading ? (
-        <Typography>Loading...</Typography>
-      ) : error ? (
-        <Typography color="error">Error: {error}</Typography>
+        <TableSkeleton columns={8} rows={5} />
+      ) : displayError ? (
+        <Typography color="error">Error: {displayError}</Typography>
       ) : (
         <TableContainer sx={{ bgcolor: "background.paper" }}>
           <Table>

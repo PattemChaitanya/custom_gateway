@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Container,
@@ -38,10 +38,17 @@ import {
 } from "@mui/icons-material";
 import { secretsService } from "../services/secrets";
 import type { Secret, CreateSecretRequest } from "../services/secrets";
+import { useQueryCache } from "../hooks/useQueryCache";
+import { TableSkeleton } from "../components/Skeletons";
 
 export const Secrets: React.FC = () => {
-  const [secrets, setSecrets] = useState<Secret[]>([]);
-  const [loading, setLoading] = useState(false);
+  const {
+    data: secrets = [],
+    loading,
+    error: fetchError,
+    refetch: refetchSecrets,
+  } = useQueryCache<Secret[]>("secrets", () => secretsService.list());
+  const [mutating, setMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -64,37 +71,23 @@ export const Secrets: React.FC = () => {
   const [rotateValue, setRotateValue] = useState("");
   const [tagInput, setTagInput] = useState("");
 
-  useEffect(() => {
-    loadSecrets();
-  }, []);
-
-  const loadSecrets = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await secretsService.list();
-      setSecrets(data);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to load secrets");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const displayError = fetchError || error;
+  const isDisabled = loading || mutating;
 
   const handleCreate = async () => {
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       await secretsService.create(newSecretData);
       setSuccess("Secret created successfully");
-      await loadSecrets();
+      await refetchSecrets();
       setCreateDialogOpen(false);
       setNewSecretData({ key: "", value: "", description: "", tags: [] });
       setTagInput("");
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to create secret");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
@@ -102,7 +95,7 @@ export const Secrets: React.FC = () => {
     if (!selectedSecret) return;
 
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       await secretsService.update(
         selectedSecret.key,
@@ -110,14 +103,14 @@ export const Secrets: React.FC = () => {
         selectedSecret.description,
       );
       setSuccess("Secret updated successfully");
-      await loadSecrets();
+      await refetchSecrets();
       setUpdateDialogOpen(false);
       setUpdateValue("");
       setSelectedSecret(null);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to update secret");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
@@ -125,24 +118,24 @@ export const Secrets: React.FC = () => {
     if (!selectedSecret) return;
 
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       await secretsService.rotate(selectedSecret.key, rotateValue);
       setSuccess("Secret rotated successfully");
-      await loadSecrets();
+      await refetchSecrets();
       setRotateDialogOpen(false);
       setRotateValue("");
       setSelectedSecret(null);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to rotate secret");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
   const handleView = async (secret: Secret) => {
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       const data = await secretsService.get(secret.key, true);
       setDecryptedValue(data.value || "");
@@ -151,7 +144,7 @@ export const Secrets: React.FC = () => {
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to decrypt secret");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
@@ -164,15 +157,15 @@ export const Secrets: React.FC = () => {
       return;
 
     try {
-      setLoading(true);
+      setMutating(true);
       setError(null);
       await secretsService.delete(key);
       setSuccess("Secret deleted successfully");
-      await loadSecrets();
+      await refetchSecrets();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to delete secret");
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
@@ -220,7 +213,7 @@ export const Secrets: React.FC = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setCreateDialogOpen(true)}
-            disabled={loading}
+            disabled={isDisabled}
           >
             Create Secret
           </Button>
@@ -231,9 +224,9 @@ export const Secrets: React.FC = () => {
         </Typography>
       </Box>
 
-      {error && (
+      {displayError && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
+          {displayError}
         </Alert>
       )}
 
@@ -248,137 +241,141 @@ export const Secrets: React.FC = () => {
       )}
 
       <Card>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Description</TableCell>
-                <TableCell>Tags</TableCell>
-                <TableCell>Created</TableCell>
-                <TableCell>Updated</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {secrets.length === 0 ? (
+        {loading ? (
+          <TableSkeleton columns={6} rows={3} />
+        ) : (
+          <TableContainer>
+            <Table>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      No secrets yet. Create your first secret to get started.
-                    </Typography>
-                  </TableCell>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Description</TableCell>
+                  <TableCell>Tags</TableCell>
+                  <TableCell>Created</TableCell>
+                  <TableCell>Updated</TableCell>
+                  <TableCell align="right">Actions</TableCell>
                 </TableRow>
-              ) : (
-                secrets.map((secret) => (
-                  <TableRow key={secret.id} hover>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        fontWeight={500}
-                        fontFamily="monospace"
-                      >
-                        {secret.key}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
+              </TableHead>
+              <TableBody>
+                {secrets.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
                       <Typography variant="body2" color="text.secondary">
-                        {secret.description || "N/A"}
+                        No secrets yet. Create your first secret to get started.
                       </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Stack direction="row" spacing={0.5} flexWrap="wrap">
-                        {secret.tags && secret.tags.length > 0 ? (
-                          secret.tags.map((tag) => (
-                            <Chip
-                              key={tag}
-                              label={tag}
-                              size="small"
-                              sx={{ mb: 0.5 }}
-                            />
-                          ))
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            N/A
-                          </Typography>
-                        )}
-                      </Stack>
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ fontSize: "0.75rem" }}
-                      >
-                        {formatDate(secret.created_at)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ fontSize: "0.75rem" }}
-                      >
-                        {formatDate(secret.updated_at)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        justifyContent="flex-end"
-                      >
-                        <Tooltip title="View Decrypted">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleView(secret)}
-                            disabled={loading}
-                          >
-                            <VisibilityIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Update">
-                          <IconButton
-                            size="small"
-                            onClick={() => {
-                              setSelectedSecret(secret);
-                              setUpdateDialogOpen(true);
-                            }}
-                            disabled={loading}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Rotate">
-                          <IconButton
-                            size="small"
-                            onClick={() => {
-                              setSelectedSecret(secret);
-                              setRotateDialogOpen(true);
-                            }}
-                            disabled={loading}
-                          >
-                            <RefreshIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => handleDelete(secret.key)}
-                            disabled={loading}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                ) : (
+                  secrets.map((secret) => (
+                    <TableRow key={secret.id} hover>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          fontWeight={500}
+                          fontFamily="monospace"
+                        >
+                          {secret.key}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {secret.description || "N/A"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                          {secret.tags && secret.tags.length > 0 ? (
+                            secret.tags.map((tag) => (
+                              <Chip
+                                key={tag}
+                                label={tag}
+                                size="small"
+                                sx={{ mb: 0.5 }}
+                              />
+                            ))
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">
+                              N/A
+                            </Typography>
+                          )}
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ fontSize: "0.75rem" }}
+                        >
+                          {formatDate(secret.created_at)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ fontSize: "0.75rem" }}
+                        >
+                          {formatDate(secret.updated_at)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          justifyContent="flex-end"
+                        >
+                          <Tooltip title="View Decrypted">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleView(secret)}
+                              disabled={isDisabled}
+                            >
+                              <VisibilityIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Update">
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setSelectedSecret(secret);
+                                setUpdateDialogOpen(true);
+                              }}
+                              disabled={isDisabled}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Rotate">
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setSelectedSecret(secret);
+                                setRotateDialogOpen(true);
+                              }}
+                              disabled={isDisabled}
+                            >
+                              <RefreshIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleDelete(secret.key)}
+                              disabled={isDisabled}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </Card>
 
       {/* Create Secret Dialog */}

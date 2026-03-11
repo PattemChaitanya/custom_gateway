@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Button,
@@ -22,7 +22,6 @@ import {
   TextField,
   Typography,
   Alert,
-  CircularProgress,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -38,6 +37,8 @@ import type {
   CreateConnectorRequest,
   ConnectorTestResult,
 } from "../services/connectors";
+import { useQueryCache } from "../hooks/useQueryCache";
+import { TableSkeleton } from "../components/Skeletons";
 
 const CONNECTOR_TYPES = [
   { value: "postgresql", label: "PostgreSQL" },
@@ -49,8 +50,12 @@ const CONNECTOR_TYPES = [
 ];
 
 const Connectors: React.FC = () => {
-  const [connectors, setConnectors] = useState<Connector[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    data: connectors = [],
+    loading,
+    error: fetchError,
+    refetch: refetchConnectors,
+  } = useQueryCache<Connector[]>("connectors", () => connectorsService.list());
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
@@ -73,22 +78,7 @@ const Connectors: React.FC = () => {
   });
   const [configJson, setConfigJson] = useState("{}");
 
-  useEffect(() => {
-    loadConnectors();
-  }, []);
-
-  const loadConnectors = async () => {
-    try {
-      setLoading(true);
-      const data = await connectorsService.list();
-      setConnectors(data);
-      setError(null);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to load connectors");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const displayError = fetchError || error;
 
   const handleOpenDialog = (connector?: Connector) => {
     if (connector) {
@@ -139,7 +129,7 @@ const Connectors: React.FC = () => {
       }
 
       handleCloseDialog();
-      loadConnectors();
+      refetchConnectors();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to save connector");
@@ -154,7 +144,7 @@ const Connectors: React.FC = () => {
       setSuccess("Connector deleted successfully");
       setDeleteDialogOpen(false);
       setConnectorToDelete(null);
-      loadConnectors();
+      refetchConnectors();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to delete connector");
@@ -204,9 +194,9 @@ const Connectors: React.FC = () => {
         </Button>
       </Box>
 
-      {error && (
+      {displayError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
+          {displayError}
         </Alert>
       )}
 
@@ -221,9 +211,9 @@ const Connectors: React.FC = () => {
       )}
 
       {loading ? (
-        <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-          <CircularProgress />
-        </Box>
+        <Card>
+          <TableSkeleton columns={6} rows={3} />
+        </Card>
       ) : (
         <Card>
           <TableContainer>
