@@ -166,8 +166,8 @@ Gateway management/
 
 Pre-built connectors for:
 - **Databases**: PostgreSQL, MongoDB
-- **Queues**: Redis, Kafka (placeholder)
-- **Storage**: AWS S3, Azure Blob Storage (placeholder)
+- **Queues**: Redis, Kafka.  
+- **Storage**: AWS S3, Azure Blob Storage 
 
 All connectors support:
 - Connection pooling
