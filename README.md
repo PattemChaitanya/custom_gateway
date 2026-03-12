@@ -252,12 +252,6 @@ See [backend/API_REFERENCE.md](backend/API_REFERENCE.md) for complete API docume
 
 ---
 
-## 📄 License
-
-This project is proprietary and confidential.
-
----
-
 ## 🎉 Status
 
 ✅ **Backend Implementation Complete** - All features implemented and tested  
