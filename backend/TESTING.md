@@ -9,7 +9,10 @@
 1. [Quick Start](#quick-start)
 2. [Test Infrastructure Overview](#test-infrastructure-overview)
 3. [Running Tests](#running-tests)
-4. [Phase-by-Phase Test Reference](#phase-by-phase-test-reference)
+4. [pytest Markers & Filters](#pytest-markers--filters)
+5. [Fixture Reference](#fixture-reference)
+6. [Complete Test Catalogue](#complete-test-catalogue)
+7. [Phase-by-Phase Test Reference](#phase-by-phase-test-reference)
    - [Phase 1 – Gateway Proxy Engine](#phase-1--gateway-proxy-engine)
    - [Phase 2 – API Deployment & Lifecycle](#phase-2--api-deployment--lifecycle)
    - [Phase 3 – Auth Policy Enforcement](#phase-3--auth-policy-enforcement)
@@ -20,9 +23,11 @@
    - [Phase 8 – Backend Pool Load Balancing](#phase-8--backend-pool-load-balancing)
    - [Phase 9 – Mini-Cloud Integration](#phase-9--mini-cloud-integration)
    - [Phase 10 – Sub-resource CRUD & Full Auth Flow](#phase-10--sub-resource-crud--full-auth-flow)
-5. [Manual Testing with curl](#manual-testing-with-curl)
-6. [Test Files Reference](#test-files-reference)
-7. [Troubleshooting](#troubleshooting)
+8. [Manual Testing with curl](#manual-testing-with-curl)
+9. [Manual Testing with PowerShell (Windows)](#manual-testing-with-powershell-windows)
+10. [Writing New Tests](#writing-new-tests)
+11. [Test Files Reference](#test-files-reference)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -120,6 +125,146 @@ pytest tests/test_e2e_gateway.py -k "phase9" -v
 pytest --cov=app --cov-report=html tests/
 # Open htmlcov/index.html in your browser
 ```
+
+---
+
+## pytest Markers & Filters
+
+Markers are declared in `pytest.ini` and can be applied to any test.
+
+| Marker | Purpose | Run with |
+|---|---|---|
+| `asyncio` | Marks a test as async (applied automatically via `asyncio_mode=auto`) | `pytest -m asyncio` |
+| `slow` | Long-running tests (network calls, large migrations) | `pytest -m slow` |
+| `integration` | Tests that cross module boundaries | `pytest -m integration` |
+| `unit` | Pure logic unit tests with no DB/network | `pytest -m unit` |
+| `security` | Auth, RBAC, and injection-related tests | `pytest -m security` |
+
+**Filter by keyword** (works across all test files):
+
+```bash
+# Run all Phase 4 tests
+pytest -k "phase4" -v
+
+# Run all tests that touch the gateway
+pytest -k "gateway" -v
+
+# Exclude slow tests
+pytest -m "not slow" -v
+
+# Run security-tagged tests only
+pytest -m security -v
+```
+
+**Useful pytest flags**:
+
+| Flag | Effect |
+|---|---|
+| `-v` | Verbose — print each test name and PASSED/FAILED |
+| `-s` | Disable output capture — see print() and log output |
+| `-x` | Stop after first failure |
+| `--tb=short` | Shorter traceback on failure |
+| `--lf` | Re-run only the tests that failed in the last run |
+| `-q` | Quiet — only print summary |
+| `--co` | Collect-only — list tests without running them |
+
+---
+
+## Fixture Reference
+
+Fixtures are reusable setup/teardown helpers. They are defined in two places:
+
+### `tests/conftest.py` (session-scoped, global)
+
+| Fixture | Scope | What it does |
+|---|---|---|
+| `apply_migrations` | `session` (autouse) | Deletes `test_dev.db`, runs `alembic upgrade head`, sets `DATABASE_URL` env var |
+| `event_loop` | `session` | Creates a single asyncio event loop shared across all async tests |
+| `initialize_db_manager` | `session` | Calls `db_manager.initialize()` and `db_manager.shutdown()` around the session |
+
+> `apply_migrations` is `autouse=True` — it runs automatically before any test, without you needing to list it.
+
+### `tests/test_e2e_gateway.py` (module-scoped)
+
+| Fixture | Scope | What it does |
+|---|---|---|
+| `client` | `module` | Creates `AsyncClient(ASGITransport(app))` — the in-process HTTP client |
+| `admin_token` | `module` | Registers a unique user, logs in, returns the `access_token` string |
+| `auth` | `module` | Returns `{"Authorization": "Bearer <admin_token>"}` for use as `headers=auth` |
+| `api_id` | `module` | Creates a new API in `draft` status, returns its integer id |
+| `deployed_api` | `module` | Deploys the `api_id` API to environment 1 (Production), returns the api id |
+
+**How fixtures chain**:
+
+```
+apply_migrations (autouse, session)
+     │
+     └─► client (module)
+              │
+              ├─► admin_token (module)
+              │        │
+              │        └─► auth (module) ─────────────────────┐
+              │                                               │
+              └─► api_id (module, depends on client + auth) ──┤
+                       │                                      │
+                       └─► deployed_api (module) ─────────────┘
+```
+
+**Using fixtures in your own tests**:
+
+```python
+@pytest.mark.asyncio
+async def test_my_feature(client, auth, deployed_api):
+    # client   → AsyncClient, ready to make HTTP calls
+    # auth     → {"Authorization": "Bearer <token>"}
+    # deployed_api → integer API id of an ACTIVE API
+    r = await client.get(f"/apis/{deployed_api}", headers=auth)
+    assert r.status_code == 200
+```
+
+---
+
+## Complete Test Catalogue
+
+All 35 tests in `tests/test_e2e_gateway.py`:
+
+| # | Test name | Phase | What it asserts |
+|---|---|---|---|
+| 1 | `test_rbac_unauthenticated_is_rejected` | 5 | `GET /apis/` without token → 401 or 403 |
+| 2 | `test_rbac_authenticated_can_list_apis` | 5 | Bearer token → 200, returns a list |
+| 3 | `test_phase2_draft_api_returns_503` | 2 | Draft API gateway call → 503 |
+| 4 | `test_phase2_deployed_api_is_active` | 2 | Status after deploy is not `draft` |
+| 5 | `test_phase2_deployment_list` | 2 | `GET /apis/{id}/deployments` → ≥ 1 entry |
+| 6 | `test_phase1_gateway_exists` | 1 | Active API does not return 503 from gateway |
+| 7 | `test_phase1_gateway_response_headers` | 1 | `x-gateway-latency-ms` and `x-gateway-url-source` in response |
+| 8 | `test_phase1_unknown_api_returns_404` | 1 | `/gw/99999999/path` → 404 |
+| 9 | `test_phase3_open_policy_passes` | 3 | `open` policy → gateway does not return 401 |
+| 10 | `test_phase3_apikey_policy_blocks_without_key` | 3 | `apiKey` policy + no key → 401 or 403 |
+| 11 | `test_phase3_jwt_policy_blocks_without_token` | 3 | `jwt` policy + no Bearer → 401 or 403 |
+| 12 | `test_phase3_auth_policy_crud` | 3 | Full create/list/get/update/delete on auth-policies |
+| 13 | `test_phase4_rate_limit_crud` | 4 | Full create/list/update/delete on rate-limits |
+| 14 | `test_phase4_rate_limit_enforced` | 4 | limit=1 → 2nd request returns 429 |
+| 15 | `test_phase6_secret_crud` | 6 | Full create/list/get/delete on `/api/secrets/` |
+| 16 | `test_phase7_schema_crud` | 7 | Full create/list/get/update/delete on schemas |
+| 17 | `test_phase7_schema_validation_rejects_invalid_body` | 7 | Invalid body → 422; valid body → not 422 |
+| 18 | `test_phase8_backend_pool_crud` | 8 | Create pool, update algo, toggle backend health, delete |
+| 19 | `test_phase9_register_instance` | 9 | Register mini-cloud instance → 200 with correct fields |
+| 20 | `test_phase9_heartbeat` | 9 | Heartbeat endpoint → 200 |
+| 21 | `test_phase9_route_request` | 9 | `POST /mini-cloud/services/{s}/route` → returns target URL |
+| 22 | `test_phase9_resolve_endpoint` | 9 | `GET /mini-cloud/services/{s}/resolve` → returns instance |
+| 23 | `test_phase9_link_and_unlink_api` | 9 | Link writes `service_name` to API config; unlink clears it |
+| 24 | `test_phase9_gateway_selects_mini_cloud_url` | 9 | Linked API → `x-gateway-url-source: mini-cloud` |
+| 25 | `test_phase9_scheduler_enqueue_and_ack` | 9 | Enqueue → lease → ack full job lifecycle |
+| 26 | `test_phase9_autoscaler_scale_up` | 9 | High queue depth → `action: scale_up` |
+| 27 | `test_phase9_autoscaler_scale_down` | 9 | Low load → `action: scale_down` or `none` |
+| 28 | `test_phase9_control_loop_tick` | 9 | Control loop tick → `queue_depth` and `autoscaler` keys |
+| 29 | `test_phase10_deployment_delete` | 10 | Create deployment → delete → 204 |
+| 30 | `test_phase10_api_update_description` | 10 | `PUT /apis/{id}` updates `description` field |
+| 31 | `test_phase10_deprecated_api_returns_410` | 10 | Deprecate API → gateway returns 410 |
+| 32 | `test_phase10_full_auth_flow` | 10 | register → login → /auth/me → email matches |
+| 33 | `test_phase10_refresh_token_flow` | 10 | Login → refresh → logout → revoked refresh fails |
+| 34 | `test_misc_health_check` | misc | `GET /health` → 200 |
+| 35 | `test_misc_mini_cloud_contract` | misc | `GET /mini-cloud/contract` → has `version` and `guarantees` |
 
 ---
 
@@ -690,6 +835,306 @@ curl -o /dev/null -s -w "Invalid: %{http_code}\n" -X POST http://localhost:8000/
 # Valid POST body → proxied
 curl -o /dev/null -s -w "Valid:   %{http_code}\n" -X POST http://localhost:8000/gw/$API_ID/post \
   -H "Content-Type: application/json" -d '{"name": "Bob"}'
+```
+
+---
+
+## Manual Testing with PowerShell (Windows)
+
+> The curl commands in the previous section use bash syntax. Use these PowerShell equivalents when working on Windows.
+
+### Set up token variable
+
+```powershell
+# Register (first time only)
+$body = '{"email":"admin@example.com","password":"SecretPass#1"}'
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/auth/register `
+  -Body $body -ContentType "application/json"
+
+# Login and capture token
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:8000/auth/login `
+  -Body $body -ContentType "application/json"
+$TOKEN = $login.access_token
+$HEADERS = @{ Authorization = "Bearer $TOKEN" }
+```
+
+### Create an API
+
+```powershell
+$api = Invoke-RestMethod -Method Post -Uri http://localhost:8000/apis/ `
+  -Headers $HEADERS `
+  -Body '{"name":"demo-api","version":"v1","config":{"target_url":"http://httpbin.org"}}' `
+  -ContentType "application/json"
+$API_ID = $api.id
+Write-Host "API ID: $API_ID  Status: $($api.status)"
+```
+
+### Test gateway (draft → 503, then deploy → active)
+
+```powershell
+# Draft → 503
+try {
+    Invoke-RestMethod -Uri "http://localhost:8000/gw/$API_ID/get"
+} catch {
+    Write-Host "Status: $($_.Exception.Response.StatusCode.value__)"  # expect 503
+}
+
+# Deploy
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8000/apis/$API_ID/deployments" `
+  -Headers $HEADERS `
+  -Body "{`"environment_id`":1,`"target_url_override`":`"http://httpbin.org`"}" `
+  -ContentType "application/json"
+
+# Active → proxies (200 or 502 from upstream)
+$gw = Invoke-WebRequest -Uri "http://localhost:8000/gw/$API_ID/get"
+Write-Host "Status: $($gw.StatusCode)"
+Write-Host "URL Source: $($gw.Headers['x-gateway-url-source'])"
+```
+
+### Add apiKey policy and test enforcement
+
+```powershell
+# Add policy
+$policy = Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8000/apis/$API_ID/auth-policies" `
+  -Headers $HEADERS `
+  -Body '{"name":"guard","type":"apiKey","config":{"header_name":"X-API-Key"}}' `
+  -ContentType "application/json"
+$POLICY_ID = $policy.id
+
+# Without key → 401
+try {
+    Invoke-RestMethod -Uri "http://localhost:8000/gw/$API_ID/get"
+} catch {
+    Write-Host "No key: $($_.Exception.Response.StatusCode.value__)"  # expect 401
+}
+
+# Remove policy
+Invoke-RestMethod -Method Delete `
+  -Uri "http://localhost:8000/apis/$API_ID/auth-policies/$POLICY_ID" `
+  -Headers $HEADERS
+```
+
+### Rate limit enforcement
+
+```powershell
+$rl = Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8000/apis/$API_ID/rate-limits" `
+  -Headers $HEADERS `
+  -Body '{"name":"tight","algorithm":"fixed_window","limit":1,"window_seconds":60,"key_type":"global"}' `
+  -ContentType "application/json"
+$RL_ID = $rl.id
+
+# First request — passes
+$r1 = Invoke-WebRequest -Uri "http://localhost:8000/gw/$API_ID/get"
+Write-Host "First: $($r1.StatusCode)"  # not 429
+
+# Second request — 429
+try {
+    $r2 = Invoke-WebRequest -Uri "http://localhost:8000/gw/$API_ID/get"
+    Write-Host "Second: $($r2.StatusCode)"
+} catch {
+    Write-Host "Second: $($_.Exception.Response.StatusCode.value__)"  # expect 429
+}
+
+# Cleanup
+Invoke-RestMethod -Method Delete `
+  -Uri "http://localhost:8000/apis/$API_ID/rate-limits/$RL_ID" `
+  -Headers $HEADERS
+```
+
+### Schema validation
+
+```powershell
+$schema = Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8000/apis/$API_ID/schemas" `
+  -Headers $HEADERS `
+  -Body '{
+    "name": "body-schema",
+    "definition": {
+      "type": "object",
+      "properties": {"name": {"type": "string"}},
+      "required": ["name"]
+    }
+  }' `
+  -ContentType "application/json"
+$SC_ID = $schema.id
+
+# Invalid body → 422
+try {
+    Invoke-RestMethod -Method Post -Uri "http://localhost:8000/gw/$API_ID/post" `
+      -Body '{"age":99}' -ContentType "application/json"
+} catch {
+    Write-Host "Invalid: $($_.Exception.Response.StatusCode.value__)"  # expect 422
+}
+
+# Valid body → proxied
+try {
+    $res = Invoke-WebRequest -Method Post -Uri "http://localhost:8000/gw/$API_ID/post" `
+      -Body '{"name":"Bob"}' -ContentType "application/json"
+    Write-Host "Valid: $($res.StatusCode)"  # not 422
+} catch {
+    Write-Host "Valid (upstream error): $($_.Exception.Response.StatusCode.value__)"
+}
+```
+
+### Mini-cloud link
+
+```powershell
+$SVC = "my-service"
+
+# Register instance
+Invoke-RestMethod -Method Post -Uri "http://localhost:8000/mini-cloud/services/$SVC/instances" `
+  -Body '{"instance_id":"svc-1","url":"http://httpbin.org","ttl_seconds":120}' `
+  -ContentType "application/json"
+
+# Link API
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8000/mini-cloud/services/$SVC/link-api/$API_ID" `
+  -Body '{"routing_strategy":"round_robin"}' -ContentType "application/json"
+
+# Gateway uses mini-cloud source
+$gw = Invoke-WebRequest -Uri "http://localhost:8000/gw/$API_ID/get"
+Write-Host "URL Source: $($gw.Headers['x-gateway-url-source'])"  # mini-cloud
+
+# Unlink
+Invoke-RestMethod -Method Delete `
+  -Uri "http://localhost:8000/mini-cloud/services/$SVC/link-api/$API_ID"
+```
+
+---
+
+## Writing New Tests
+
+### Anatomy of an E2E test
+
+```python
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+# 1. Tests are async functions
+@pytest.mark.asyncio
+async def test_my_feature(client, auth, deployed_api):
+    # 2. Use the shared client fixture for HTTP calls
+    r = await client.post(
+        f"/apis/{deployed_api}/auth-policies",
+        json={"name": "my-policy", "type": "open", "config": {}},
+        headers=auth,          # 3. Always pass auth headers for management endpoints
+    )
+    # 4. Assert on status code first, then response body
+    assert r.status_code == 201, r.text
+    assert r.json()["type"] == "open"
+```
+
+### Adding a test for a new gateway behavior
+
+```python
+@pytest.mark.asyncio
+async def test_gateway_custom_header_forwarded(client, auth, deployed_api):
+    """Gateway must forward X-Custom-Header to upstream."""
+    r = await client.get(
+        f"/gw/{deployed_api}/headers",
+        headers={"X-Custom-Header": "hello"},
+    )
+    # httpbin.org/headers echoes request headers back
+    assert r.status_code == 200
+    forwarded = r.json().get("headers", {})
+    assert forwarded.get("X-Custom-Header") == "hello"
+```
+
+### Adding a test for a new management endpoint
+
+```python
+@pytest.mark.asyncio
+async def test_my_new_endpoint_crud(client, auth, deployed_api):
+    """Full CRUD on /apis/{id}/my-new-resource."""
+    # CREATE
+    r = await client.post(
+        f"/apis/{deployed_api}/my-new-resource",
+        json={"name": "test", "value": 42},
+        headers=auth,
+    )
+    assert r.status_code == 201, r.text
+    resource_id = r.json()["id"]
+
+    # READ
+    r = await client.get(f"/apis/{deployed_api}/my-new-resource/{resource_id}", headers=auth)
+    assert r.status_code == 200
+    assert r.json()["value"] == 42
+
+    # UPDATE
+    r = await client.put(
+        f"/apis/{deployed_api}/my-new-resource/{resource_id}",
+        json={"value": 99},
+        headers=auth,
+    )
+    assert r.status_code == 200
+    assert r.json()["value"] == 99
+
+    # DELETE
+    r = await client.delete(f"/apis/{deployed_api}/my-new-resource/{resource_id}", headers=auth)
+    assert r.status_code == 204
+
+    # CONFIRM GONE
+    r = await client.get(f"/apis/{deployed_api}/my-new-resource/{resource_id}", headers=auth)
+    assert r.status_code == 404
+```
+
+### Adding a module-scoped fixture
+
+Use `module` scope when the setup is expensive and can be safely shared across tests in the same file:
+
+```python
+import pytest_asyncio
+
+@pytest_asyncio.fixture(scope="module")
+async def special_api(client, auth):
+    """Create an API with a specific config for a group of tests."""
+    r = await client.post("/apis/", json={
+        "name": "special-api",
+        "version": "v2",
+        "config": {"target_url": "http://my-backend.internal"},
+    }, headers=auth)
+    assert r.status_code == 201
+    api_id = r.json()["id"]
+    yield api_id
+    # Cleanup: delete the API after all tests in this module finish
+    await client.delete(f"/apis/{api_id}", headers=auth)
+```
+
+### Test isolation checklist
+
+Before submitting a new test, verify:
+
+- [ ] Does not depend on test execution order (use module-scoped fixtures for shared state)
+- [ ] Cleans up resources it creates (delete policies, schemas, pools in a cleanup block)
+- [ ] Uses a unique name (add `uuid.uuid4().hex[:6]` suffix if needed to avoid conflicts)
+- [ ] Asserts `r.status_code == <expected>, r.text` so failures are informative
+- [ ] Uses `async def` and the `client` fixture, not raw `TestClient`
+
+### Environment variable reference for tests
+
+The following environment variables affect test behaviour:
+
+| Variable | Default in tests | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `sqlite+aiosqlite:///test_dev.db` | Set by `conftest.py`; overrides production DB |
+| `SECRET_KEY` | Value from `.env` or a fallback | JWT signing key |
+| `JWT_ALGORITHM` | `HS256` | JWT algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Token lifetime |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime |
+
+Set any of these in a `.env` file in the `backend/` directory, or export them before running pytest:
+
+```bash
+# bash
+export SECRET_KEY="test-secret-key-change-in-production"
+pytest tests/test_e2e_gateway.py -v
+
+# PowerShell
+$env:SECRET_KEY = "test-secret-key-change-in-production"
+pytest tests/test_e2e_gateway.py -v
 ```
 
 ---
