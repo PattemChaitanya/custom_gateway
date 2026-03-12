@@ -37,7 +37,8 @@ An enterprise-grade API Gateway Management System with comprehensive security, m
 
 ```powershell
 # Clone repository
-cd "d:\projects\Gateway management"
+git clone https://github.com/PattemChaitanya/custom_gateway
+cd custom_gateway
 
 # Create virtual environment
 python -m venv .venv
@@ -260,7 +261,7 @@ This project is proprietary and confidential.
 ## 🎉 Status
 
 ✅ **Backend Implementation Complete** - All features implemented and tested  
-🔄 **Frontend Integration** - In progress  
+🔄 **Frontend Integration** - In progress
 📝 **Documentation** - Complete  
 🚀 **Production Ready** - Yes (backend)
 
@@ -291,8 +292,8 @@ This project is proprietary and confidential.
 ### 2. Clone the Repository
 
 ```bash
-git clone <repo-url>
-cd repo-root
+git clone https://github.com/PattemChaitanya/custom_gateway
+cd custom_gateway
 ```
 
 ### 3. Setup Backend
