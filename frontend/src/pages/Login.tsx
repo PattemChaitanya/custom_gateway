@@ -58,7 +58,18 @@ export default function Login() {
         setError(r.error);
       } else {
         const js = await me();
-        setProfile({ email: js.email });
+        if ((js as any).error) {
+          setError((js as any).error);
+          return;
+        }
+        setProfile({
+          id: js.id,
+          email: js.email,
+          is_active: js.is_active,
+          is_superuser: js.is_superuser,
+          roles: js.roles || [],
+          permissions: js.permissions || [],
+        });
         if (remember) {
           localStorage.setItem("remember", "1");
           localStorage.setItem("-princem", btoa(email));
@@ -153,23 +164,21 @@ export default function Login() {
             helperText={fieldErrors.password}
             fullWidth
             size="small"
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      aria-label={
-                        showPassword ? "Hide password" : "Show password"
-                      }
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                      size="small"
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              },
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                    onClick={() => setShowPassword(!showPassword)}
+                    edge="end"
+                    size="small"
+                  >
+                    {showPassword ? <VisibilityOff /> : <Visibility />}
+                  </IconButton>
+                </InputAdornment>
+              ),
             }}
           />
 

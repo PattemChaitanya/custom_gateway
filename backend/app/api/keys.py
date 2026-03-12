@@ -79,7 +79,7 @@ async def create_api_key(
             user_id=current_user.get("id"),
             resource_type="api_key",
             resource_id=str(api_key_obj.id),
-            metadata_json={"label": request.label, "scopes": request.scopes},
+            metadata={"label": request.label, "scopes": request.scopes},
         )
 
         await session.commit()

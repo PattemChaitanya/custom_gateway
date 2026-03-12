@@ -44,6 +44,17 @@ import usePermissions from "../hooks/usePermissions";
 import { useQueryCache } from "../hooks/useQueryCache";
 import { TableSkeleton } from "../components/Skeletons";
 
+/** Safely extract a human-readable message from an axios error. */
+function apiError(err: any, fallback: string): string {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail))
+    return detail.map((e: any) => e.msg ?? JSON.stringify(e)).join("; ");
+  return fallback;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const Users: React.FC = () => {
   const {
     data: users = [],
@@ -95,7 +106,7 @@ const Users: React.FC = () => {
       setSelectedUser(detailedUser);
       setDetailsDialogOpen(true);
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to load user details");
+      setError(apiError(err, "Failed to load user details"));
     }
   };
 
@@ -125,7 +136,7 @@ const Users: React.FC = () => {
       refetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to update user");
+      setError(apiError(err, "Failed to update user"));
     }
   };
 
@@ -154,7 +165,7 @@ const Users: React.FC = () => {
       refetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to assign role");
+      setError(apiError(err, "Failed to assign role"));
     }
   };
 
@@ -178,7 +189,7 @@ const Users: React.FC = () => {
       refetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to delete user");
+      setError(apiError(err, "Failed to delete user"));
     }
   };
 
@@ -424,7 +435,15 @@ const Users: React.FC = () => {
       {/* Create User Dialog */}
       <Dialog
         open={createDialogOpen}
-        onClose={() => setCreateDialogOpen(false)}
+        onClose={() => {
+          setCreateDialogOpen(false);
+          setCreateFormData({
+            email: "",
+            password: "",
+            is_active: true,
+            is_superuser: false,
+          });
+        }}
         maxWidth="sm"
         fullWidth
       >
@@ -445,6 +464,8 @@ const Users: React.FC = () => {
               type="password"
               fullWidth
               value={createFormData.password}
+              helperText="8–72 characters"
+              inputProps={{ maxLength: 72 }}
               onChange={(e) =>
                 setCreateFormData({
                   ...createFormData,
@@ -485,21 +506,56 @@ const Users: React.FC = () => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setCreateDialogOpen(false);
+              setCreateFormData({
+                email: "",
+                password: "",
+                is_active: true,
+                is_superuser: false,
+              });
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             onClick={async () => {
+              if (!createFormData.email.trim()) {
+                setError("Email is required");
+                return;
+              }
+              if (!EMAIL_RE.test(createFormData.email)) {
+                setError("Please enter a valid email address");
+                return;
+              }
+              if (createFormData.password.length < 8) {
+                setError("Password must be at least 8 characters");
+                return;
+              }
               try {
-                await userService.createUser(createFormData as any);
+                await userService.createUser(createFormData);
                 setSuccess("User created successfully");
                 setCreateDialogOpen(false);
+                setCreateFormData({
+                  email: "",
+                  password: "",
+                  is_active: true,
+                  is_superuser: false,
+                });
                 refetchUsers();
                 setTimeout(() => setSuccess(null), 3000);
               } catch (err: any) {
-                setError(err.response?.data?.detail || "Failed to create user");
+                setError(apiError(err, "Failed to create user"));
               }
             }}
             variant="contained"
             color="primary"
+            disabled={
+              !createFormData.email.trim() ||
+              !EMAIL_RE.test(createFormData.email) ||
+              createFormData.password.length < 8
+            }
           >
             Create
           </Button>

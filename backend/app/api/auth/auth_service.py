@@ -342,7 +342,7 @@ async def login_user(email: str, password: str, session: AsyncSession):
     roles = ','.join(r.strip().lower()
                      for r in raw_roles.split(',') if r.strip())
     is_super = bool(getattr(user, 'is_superuser', False))
-    extra = {"roles": roles, "is_superuser": is_super}
+    extra = {"roles": roles, "is_superuser": is_super, "user_id": user.id}
     access = _create_token(
         email, ACCESS_TOKEN_EXPIRE_SECONDS, extra_claims=extra)
     refresh = _create_token(
@@ -448,7 +448,10 @@ async def refresh_tokens(refresh_token: str, session: AsyncSession):
         roles = ",".join(r.strip().lower()
                          for r in roles.split(",") if r.strip())
         is_super = bool(payload.get("is_superuser", False))
+        uid = payload.get("user_id")
         extra = {"roles": roles, "is_superuser": is_super}
+        if uid is not None:
+            extra["user_id"] = uid
 
         # create new refresh token
         new_refresh = _create_token(

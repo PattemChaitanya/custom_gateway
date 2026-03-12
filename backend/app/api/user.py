@@ -10,8 +10,10 @@ from app.db.connector import get_db
 from app.db.models import User
 from app.authorizers.rbac import RBACManager, require_permission
 from app.api.auth.auth_dependency import get_current_user
+from app.logging_config import get_logger
 
 router = APIRouter()
+logger = get_logger("user_api")
 
 
 # Helper function to safely convert datetime or string to ISO format
@@ -63,7 +65,8 @@ class UserUpdate(BaseModel):
 class CreateUserRequest(BaseModel):
     """Schema for creating a new user."""
     email: EmailStr = Field(..., description="User email")
-    password: str = Field(..., min_length=8, description="Plain text password")
+    password: str = Field(..., min_length=8, max_length=72,
+                          description="Plain text password (bcrypt max 72 bytes)")
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
 
@@ -79,8 +82,11 @@ async def list_users(
     Requires authentication.
     """
     try:
+        actor = current_user.id if getattr(
+            current_user, "id", None) else "unknown"
         result = await session.execute(select(User))
         users = result.scalars().all()
+        logger.info("users.list", actor_user_id=actor, count=len(users))
 
         return [
             UserResponse(
@@ -94,6 +100,7 @@ async def list_users(
             for u in users
         ]
     except Exception as e:
+        logger.error("users.list.failed", error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list users: {str(e)}"
@@ -111,11 +118,14 @@ async def get_current_user_info(
     Includes roles and permissions.
     """
     try:
+        actor = current_user.id if getattr(
+            current_user, "id", None) else "unknown"
         # Fetch full user object from DB for complete fields (created_at, etc.)
         result = await session.execute(select(User).where(User.id == current_user.id))
         user = result.scalars().first() or result.scalar_one_or_none()
 
         if not user:
+            logger.warning("users.me.not_found", actor_user_id=actor)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
@@ -125,6 +135,13 @@ async def get_current_user_info(
         manager = RBACManager(session)
         roles = await manager.get_user_roles(user.id)
         permissions = await manager.get_user_permissions(user.id)
+        logger.info(
+            "users.me.read",
+            actor_user_id=actor,
+            target_user_id=user.id,
+            role_count=len(roles),
+            permission_count=len(permissions),
+        )
 
         return UserWithRolesResponse(
             id=user.id,
@@ -138,6 +155,7 @@ async def get_current_user_info(
         )
 
     except Exception as e:
+        logger.error("users.me.failed", error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get current user: {str(e)}"
@@ -156,11 +174,15 @@ async def get_user(
     Includes roles and permissions.
     """
     try:
+        actor = current_user.id if getattr(
+            current_user, "id", None) else "unknown"
         # Get user
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalars().first()
 
         if not user:
+            logger.warning("users.get.not_found",
+                           actor_user_id=actor, target_user_id=user_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"User {user_id} not found"
@@ -170,6 +192,13 @@ async def get_user(
         manager = RBACManager(session)
         roles = await manager.get_user_roles(user_id)
         permissions = await manager.get_user_permissions(user_id)
+        logger.info(
+            "users.get",
+            actor_user_id=actor,
+            target_user_id=user_id,
+            role_count=len(roles),
+            permission_count=len(permissions),
+        )
 
         return UserWithRolesResponse(
             id=user.id,
@@ -185,6 +214,8 @@ async def get_user(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("users.get.failed", target_user_id=user_id,
+                     error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get user: {str(e)}"
@@ -204,11 +235,15 @@ async def update_user(
     Requires authentication.
     """
     try:
+        actor = current_user.id if getattr(
+            current_user, "id", None) else "unknown"
         # Get user
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalars().first()
 
         if not user:
+            logger.warning("users.update.not_found",
+                           actor_user_id=actor, target_user_id=user_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"User {user_id} not found"
@@ -222,8 +257,13 @@ async def update_user(
         if user_data.is_superuser is not None:
             user.is_superuser = user_data.is_superuser
 
+        # Mark the object as modified so both SQLAlchemy (PostgreSQL) and
+        # the custom SQLiteDB session persist the changes on commit.
+        session.add(user)
         await session.commit()
         await session.refresh(user)
+        logger.info("users.update", actor_user_id=actor,
+                    target_user_id=user_id)
 
         return UserResponse(
             id=user.id,
@@ -237,6 +277,8 @@ async def update_user(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("users.update.failed", target_user_id=user_id,
+                     error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update user: {str(e)}"
@@ -254,7 +296,9 @@ async def delete_user(
 
     Requires authentication. Cannot delete yourself.
     """
+    actor = current_user.id if getattr(current_user, "id", None) else "unknown"
     if user_id == current_user.id:
+        logger.warning("users.delete.self_blocked", actor_user_id=actor)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete your own account"
@@ -266,6 +310,8 @@ async def delete_user(
         user = result.scalars().first()
 
         if not user:
+            logger.warning("users.delete.not_found",
+                           actor_user_id=actor, target_user_id=user_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"User {user_id} not found"
@@ -273,12 +319,16 @@ async def delete_user(
 
         await session.delete(user)
         await session.commit()
+        logger.info("users.delete", actor_user_id=actor,
+                    target_user_id=user_id)
 
         return {"message": f"User {user_id} deleted successfully"}
 
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("users.delete.failed", target_user_id=user_id,
+                     error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete user: {str(e)}"
@@ -296,11 +346,21 @@ async def create_user(
 
     Requires authentication and proper permissions.
     """
-    from passlib.context import CryptContext
+    from app.api.auth.auth_service import pwd_context
 
     try:
-        # simple password hashing using bcrypt
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        actor = current_user.id if getattr(
+            current_user, "id", None) else "unknown"
+        # Check for existing email first (works for both PostgreSQL and SQLite)
+        existing = await session.execute(select(User).where(User.email == user_data.email))
+        if existing.scalars().first() is not None:
+            logger.warning("users.create.conflict",
+                           actor_user_id=actor, email=user_data.email)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A user with email '{user_data.email}' already exists",
+            )
+
         hashed = pwd_context.hash(user_data.password)
 
         user = User(
@@ -313,6 +373,8 @@ async def create_user(
         session.add(user)
         await session.commit()
         await session.refresh(user)
+        logger.info("users.create", actor_user_id=actor,
+                    target_user_id=user.id)
 
         return UserResponse(
             id=user.id,
@@ -323,8 +385,11 @@ async def create_user(
             created_at=to_isoformat(user.created_at),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         await session.rollback()
+        logger.error("users.create.failed", error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create user: {str(e)}"

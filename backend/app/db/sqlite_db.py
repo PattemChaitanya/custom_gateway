@@ -10,7 +10,7 @@ import aiosqlite
 import json
 from typing import Dict, Optional, List, Any, Union
 from types import SimpleNamespace
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 
@@ -297,6 +297,42 @@ class SQLiteDB:
             )
         """)
 
+        # Audit logs table
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                user_id INTEGER,
+                action TEXT NOT NULL,
+                resource_type TEXT,
+                resource_id TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                metadata_json TEXT,
+                status TEXT,
+                error_message TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+        """)
+
+        # Metrics table
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                metric_type TEXT NOT NULL,
+                endpoint TEXT,
+                method TEXT,
+                status_code INTEGER,
+                latency_ms INTEGER,
+                api_id INTEGER,
+                user_id INTEGER,
+                metadata_json TEXT,
+                FOREIGN KEY (api_id) REFERENCES apis(id) ON DELETE SET NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+        """)
+
         await self._db.commit()
         logger.debug("SQLite tables created/verified")
 
@@ -309,7 +345,7 @@ class SQLiteDB:
         for key in row.keys():
             value = row[key]
             # Handle JSON columns
-            if key in ('config', 'resource', 'permissions', 'metadata') and value:
+            if key in ('config', 'resource', 'permissions', 'metadata', 'metadata_json') and value:
                 try:
                     value = json.loads(value) if isinstance(
                         value, str) else value
@@ -761,6 +797,52 @@ class SQLiteDB:
                     ))
                     obj.id = cursor.lastrowid
 
+            elif hasattr(obj, 'action') and hasattr(obj, 'status') and hasattr(obj, 'resource_type'):
+                # AuditLog object
+                if has_id:
+                    await self._db.execute("""
+                        UPDATE audit_logs
+                        SET timestamp=?, user_id=?, action=?, resource_type=?, resource_id=?,
+                            ip_address=?, user_agent=?, metadata_json=?, status=?, error_message=?
+                        WHERE id=?
+                    """, (
+                        _to_iso(getattr(obj, 'timestamp', None)
+                                ) or datetime.utcnow().isoformat(),
+                        getattr(obj, 'user_id', None),
+                        getattr(obj, 'action', None),
+                        getattr(obj, 'resource_type', None),
+                        getattr(obj, 'resource_id', None),
+                        getattr(obj, 'ip_address', None),
+                        getattr(obj, 'user_agent', None),
+                        json.dumps(getattr(obj, 'metadata_json', None)) if getattr(
+                            obj, 'metadata_json', None) is not None else None,
+                        getattr(obj, 'status', None),
+                        getattr(obj, 'error_message', None),
+                        obj.id,
+                    ))
+                else:
+                    cursor = await self._db.execute("""
+                        INSERT INTO audit_logs (
+                            timestamp, user_id, action, resource_type, resource_id,
+                            ip_address, user_agent, metadata_json, status, error_message
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        _to_iso(getattr(obj, 'timestamp', None)
+                                ) or datetime.utcnow().isoformat(),
+                        getattr(obj, 'user_id', None),
+                        getattr(obj, 'action', None),
+                        getattr(obj, 'resource_type', None),
+                        getattr(obj, 'resource_id', None),
+                        getattr(obj, 'ip_address', None),
+                        getattr(obj, 'user_agent', None),
+                        json.dumps(getattr(obj, 'metadata_json', None)) if getattr(
+                            obj, 'metadata_json', None) is not None else None,
+                        getattr(obj, 'status', None),
+                        getattr(obj, 'error_message', None),
+                    ))
+                    obj.id = cursor.lastrowid
+
             # Permission object (has resource and action) - check before Role
             elif hasattr(obj, 'resource') and hasattr(obj, 'action') and not hasattr(obj, 'version'):
                 # Permission object (has resource and action)
@@ -955,6 +1037,14 @@ class SQLiteDB:
             await self._db.execute("DELETE FROM secrets WHERE id = ?", (obj.id,))
         elif hasattr(obj, 'config') and hasattr(obj, 'type') and hasattr(obj, 'api_id'):
             await self._db.execute("DELETE FROM connectors WHERE id = ?", (obj.id,))
+        elif hasattr(obj, 'user_id') and hasattr(obj, 'role_id'):
+            await self._db.execute("DELETE FROM user_roles WHERE id = ?", (obj.id,))
+        elif hasattr(obj, 'resource') and hasattr(obj, 'action'):
+            await self._db.execute("DELETE FROM permissions WHERE id = ?", (obj.id,))
+        elif hasattr(obj, 'name') and hasattr(obj, 'permissions'):
+            await self._db.execute("DELETE FROM roles WHERE id = ?", (obj.id,))
+        elif hasattr(obj, 'action') and hasattr(obj, 'status') and hasattr(obj, 'resource_type'):
+            await self._db.execute("DELETE FROM audit_logs WHERE id = ?", (obj.id,))
 
         await self._db.commit()
 
@@ -971,7 +1061,7 @@ class SQLiteDB:
         if not self._db:
             await self.connect()
 
-        from app.db.models import User, OTP, RefreshToken, Role, Permission, UserRole, API, APIKey, Environment, Secret, Connector
+        from app.db.models import User, OTP, RefreshToken, Role, Permission, UserRole, API, APIKey, Environment, Secret, Connector, AuditLog
 
         table_map = {
             User: 'users',
@@ -984,7 +1074,8 @@ class SQLiteDB:
             APIKey: 'api_keys',
             Environment: 'environments',
             Secret: 'secrets',
-            Connector: 'connectors'
+            Connector: 'connectors',
+            AuditLog: 'audit_logs',
         }
 
         # Handle UPDATE statements
@@ -1105,7 +1196,7 @@ class SQLiteDB:
 
         tables = ['apis', 'users', 'refresh_tokens',
                   'otps', 'roles', 'permissions', 'user_roles',
-                  'connectors', 'secrets', 'api_keys']
+                  'connectors', 'secrets', 'api_keys', 'audit_logs', 'metrics']
         for table in tables:
             await self._db.execute(f"DELETE FROM {table}")
 
@@ -1133,7 +1224,9 @@ class SQLiteDB:
             'user_roles': 'user_roles',
             'connectors': 'connectors',
             'secrets': 'secrets',
-            'api_keys': 'api_keys'
+            'api_keys': 'api_keys',
+            'audit_logs': 'audit_logs',
+            'metrics': 'metrics',
         }
 
         for key, table in tables.items():
@@ -1142,6 +1235,156 @@ class SQLiteDB:
             stats[key] = row[0] if row else 0
 
         return stats
+
+    def _parse_dt(self, value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        except ValueError:
+            return None
+
+    async def list_audit_logs(
+        self,
+        user_id: Optional[int] = None,
+        action: Optional[str] = None,
+        status: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[SimpleNamespace]:
+        if not self._db:
+            await self.connect()
+
+        where_parts = []
+        params: List[Any] = []
+
+        if user_id is not None:
+            where_parts.append("user_id = ?")
+            params.append(user_id)
+        if action and action.strip():
+            where_parts.append("LOWER(action) = ?")
+            params.append(action.strip().lower())
+        if status and status.strip():
+            where_parts.append("LOWER(status) = ?")
+            params.append(status.strip().lower())
+        if start_date and start_date.strip():
+            where_parts.append("timestamp >= ?")
+            params.append(start_date.strip())
+        if end_date and end_date.strip():
+            where_parts.append("timestamp <= ?")
+            params.append(end_date.strip())
+
+        query = "SELECT * FROM audit_logs"
+        if where_parts:
+            query += " WHERE " + " AND ".join(where_parts)
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        cursor = await self._db.execute(query, params)
+        rows = await cursor.fetchall()
+        return [self._row_to_namespace(r) for r in rows]
+
+    async def get_audit_log_statistics(self) -> Dict[str, Any]:
+        if not self._db:
+            await self.connect()
+
+        cursor = await self._db.execute("SELECT COUNT(*) FROM audit_logs")
+        total_row = await cursor.fetchone()
+        audit_count = total_row[0] if total_row else 0
+
+        cursor = await self._db.execute("SELECT COUNT(*) FROM metrics")
+        metric_row = await cursor.fetchone()
+        metrics_count = metric_row[0] if metric_row else 0
+
+        cursor = await self._db.execute(
+            "SELECT action, COUNT(id) AS c FROM audit_logs GROUP BY action"
+        )
+        logs_by_type = {row[0]: row[1] for row in await cursor.fetchall() if row[0]}
+
+        cursor = await self._db.execute(
+            "SELECT user_id, COUNT(id) AS c FROM audit_logs WHERE user_id IS NOT NULL GROUP BY user_id"
+        )
+        logs_by_user = {row[0]: row[1] for row in await cursor.fetchall()}
+
+        cursor = await self._db.execute("SELECT MIN(timestamp) FROM audit_logs")
+        oldest_audit_row = await cursor.fetchone()
+        oldest_audit = oldest_audit_row[0] if oldest_audit_row else None
+
+        cursor = await self._db.execute("SELECT MIN(timestamp) FROM metrics")
+        oldest_metric_row = await cursor.fetchone()
+        oldest_metric = oldest_metric_row[0] if oldest_metric_row else None
+
+        return {
+            "total_logs": audit_count,
+            "audit_logs_count": audit_count,
+            "metrics_count": metrics_count,
+            "logs_by_type": logs_by_type,
+            "logs_by_user": logs_by_user,
+            "oldest_audit_log": oldest_audit,
+            "oldest_metric": oldest_metric,
+        }
+
+    async def list_user_audit_activity(self, target_user_id: int, days: int = 30, limit: int = 500) -> List[SimpleNamespace]:
+        if not self._db:
+            await self.connect()
+
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cursor = await self._db.execute(
+            """
+            SELECT * FROM audit_logs
+            WHERE user_id = ? AND timestamp >= ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (target_user_id, since, limit),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_namespace(r) for r in rows]
+
+    async def list_failed_audit_attempts(self, hours: int = 24, limit: int = 500) -> List[SimpleNamespace]:
+        if not self._db:
+            await self.connect()
+
+        since = (datetime.now(timezone.utc) -
+                 timedelta(hours=hours)).isoformat()
+        cursor = await self._db.execute(
+            """
+            SELECT * FROM audit_logs
+            WHERE timestamp >= ? AND (
+                LOWER(COALESCE(status, '')) IN ('failure', 'error')
+                OR LOWER(COALESCE(action, '')) LIKE '%failure%'
+            )
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (since, limit),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_namespace(r) for r in rows]
+
+    async def cleanup_old_logs(self, retention_days: int = 30) -> int:
+        if not self._db:
+            await self.connect()
+
+        cutoff = (datetime.now(timezone.utc) -
+                  timedelta(days=retention_days)).isoformat()
+
+        cursor = await self._db.execute(
+            "SELECT COUNT(*) FROM audit_logs WHERE timestamp < ?",
+            (cutoff,),
+        )
+        row = await cursor.fetchone()
+        audit_count = row[0] if row else 0
+
+        await self._db.execute("DELETE FROM audit_logs WHERE timestamp < ?", (cutoff,))
+        await self._db.execute("DELETE FROM metrics WHERE timestamp < ?", (cutoff,))
+        await self._db.commit()
+
+        return audit_count
 
     def __repr__(self) -> str:
         """String representation of the SQLite database."""

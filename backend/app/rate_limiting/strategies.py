@@ -1,7 +1,11 @@
-"""Synchronous strategy implementations used by tests.
+"""DEPRECATED: This module is a test-only in-memory shim.
 
-These provide simple in-memory strategies with the synchronous API the
-tests expect (`is_allowed(key)` returning True/False or similar).
+The production rate limiter lives in ``app.rate_limiter``.
+Import from there for any real usage.
+
+These synchronous strategies are kept because ``tests/test_rate_limiting.py``
+uses them directly to assert algorithm correctness without a Redis dependency.
+Do not use these classes in application code.
 """
 import time
 from collections import defaultdict, deque

@@ -3,6 +3,7 @@ import useAuthStore from "../hooks/useAuth";
 import { logout } from "../services/auth";
 import { useState } from "react";
 import AppBar from "@mui/material/AppBar";
+import { SIDEBAR_WIDTH } from "./Sidebar";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import IconButton from "@mui/material/IconButton";
@@ -10,7 +11,6 @@ import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Drawer from "@mui/material/Drawer";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
@@ -24,12 +24,15 @@ import usePermissions from "../hooks/usePermissions";
 import Chip from "@mui/material/Chip";
 
 const NAV_LINKS = [
+  { label: "Dashboard", to: "/dashboard" },
   { label: "APIs", to: "/apis" },
   { label: "API Keys", to: "/api-keys" },
   { label: "Secrets", to: "/secrets" },
+  { label: "Environments", to: "/environments" },
   { label: "Connectors", to: "/connectors" },
   { label: "Authorizers", to: "/authorizers" },
   { label: "Audit Logs", to: "/audit-logs" },
+  { label: "Mini-Cloud", to: "/mini-cloud" },
 ] as const;
 
 export default function Header() {
@@ -42,9 +45,30 @@ export default function Header() {
     setAnchorEl(e.currentTarget);
   const handleClose = () => setAnchorEl(null);
 
+  const apiUrl = (() => {
+    try {
+      if (typeof process !== "undefined" && (process as any).env?.VITE_API_URL)
+        return (process as any).env.VITE_API_URL as string;
+    } catch (_) {}
+    try {
+      const g = globalThis as any;
+      if (g?.__VITE_API_URL) return g.__VITE_API_URL as string;
+    } catch (_) {}
+    return "http://localhost:8000";
+  })();
+
   return (
     <>
-      <AppBar position="fixed" color="primary" elevation={1}>
+      <AppBar
+        position="fixed"
+        color="primary"
+        elevation={1}
+        sx={{
+          // left: { md: `${SIDEBAR_WIDTH}px` },
+          // width: { md: `calc(100% - ${SIDEBAR_WIDTH}px)` },
+          zIndex: 1000,
+        }}
+      >
         <Toolbar
           sx={{
             maxWidth: { xs: "100%", xl: 1400 },
@@ -56,13 +80,13 @@ export default function Header() {
           <Box
             sx={{ display: "flex", alignItems: "center", gap: 2, flexGrow: 1 }}
           >
-            {/* Hamburger — visible only on xs */}
+            {/* Hamburger — visible on xs/sm (sidebar covers md+) */}
             <IconButton
               color="inherit"
               aria-label="open navigation menu"
               edge="start"
               onClick={() => setDrawerOpen(true)}
-              sx={{ display: { xs: "inline-flex", sm: "none" } }}
+              sx={{ display: { xs: "inline-flex", md: "none" } }}
             >
               <MenuIcon />
             </IconButton>
@@ -74,7 +98,7 @@ export default function Header() {
                   height: 36,
                   bgcolor: "secondary.main",
                   borderRadius: 1,
-                  display: "flex",
+                  display: { xs: "flex", md: "none" },
                   alignItems: "center",
                   justifyContent: "center",
                   fontWeight: 700,
@@ -82,24 +106,17 @@ export default function Header() {
               >
                 ▢▤
               </Box>
-              <Typography variant="h6" component="div" noWrap>
+              <Typography
+                variant="h6"
+                component="div"
+                noWrap
+                sx={{ display: { xs: "block", md: "none" } }}
+              >
                 API Gateway
               </Typography>
             </Box>
 
-            {/* Desktop nav links */}
-            <Box sx={{ ml: 2, display: { xs: "none", sm: "flex" }, gap: 1 }}>
-              {NAV_LINKS.map((link) => (
-                <Button
-                  key={link.to}
-                  color="inherit"
-                  component={Link}
-                  to={link.to}
-                >
-                  {link.label}
-                </Button>
-              ))}
-            </Box>
+            {/* Sidebar handles desktop navigation (md+) */}
           </Box>
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -107,7 +124,7 @@ export default function Header() {
               variant="body2"
               sx={{ opacity: 0.85, display: { xs: "none", md: "block" } }}
             >
-              http://localhost
+              {apiUrl}
             </Typography>
             <ThemeToggle />
             <IconButton color="inherit" aria-label="notifications">
@@ -195,13 +212,13 @@ export default function Header() {
         </Toolbar>
       </AppBar>
 
-      {/* Mobile navigation drawer */}
+      {/* Mobile navigation drawer — shown on xs/sm (sidebar handles md+) */}
       <Drawer
         anchor="left"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         sx={{
-          display: { xs: "block", sm: "none" },
+          display: { xs: "block", md: "none" },
           "& .MuiDrawer-paper": { width: 260 },
         }}
       >
@@ -223,27 +240,17 @@ export default function Header() {
               </ListItemButton>
             </ListItem>
           ))}
-        </List>
-        <Divider />
-        <List>
-          <ListItem disablePadding>
-            <ListItemButton
-              component={Link}
-              to="/dashboard"
-              onClick={() => setDrawerOpen(false)}
-            >
-              <ListItemText primary="Dashboard" />
-            </ListItemButton>
-          </ListItem>
-          <ListItem disablePadding>
-            <ListItemButton
-              component={Link}
-              to="/environments"
-              onClick={() => setDrawerOpen(false)}
-            >
-              <ListItemText primary="Environments" />
-            </ListItemButton>
-          </ListItem>
+          {isSuperuser && (
+            <ListItem disablePadding>
+              <ListItemButton
+                component={Link}
+                to="/users"
+                onClick={() => setDrawerOpen(false)}
+              >
+                <ListItemText primary="Users" />
+              </ListItemButton>
+            </ListItem>
+          )}
         </List>
       </Drawer>
     </>

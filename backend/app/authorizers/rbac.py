@@ -361,8 +361,25 @@ class RBACManager:
             return existing
 
         user_role = UserRole(user_id=user_id, role_id=role_id)
-        session = await self._sess()
         session.add(user_role)
+
+        # Keep the legacy `users.roles` string in sync so the user-list
+        # endpoint reflects the assignment without needing a JOIN query.
+        role = await self.get_role(role_id)
+        if role:
+            user_result = await session.execute(select(User).where(User.id == user_id))
+            user = user_result.scalars().first()
+            if user:
+                current_roles = [
+                    r.strip()
+                    for r in (getattr(user, 'roles', '') or '').split(',')
+                    if r.strip()
+                ]
+                if role.name not in current_roles:
+                    current_roles.append(role.name)
+                    user.roles = ','.join(current_roles)
+                    session.add(user)
+
         await session.commit()
         await session.refresh(user_role)
 
@@ -383,8 +400,22 @@ class RBACManager:
         if not user_role:
             return False
 
-        session = await self._sess()
         await session.delete(user_role)
+
+        # Keep the legacy `users.roles` string in sync.
+        role = await self.get_role(role_id)
+        if role:
+            user_result = await session.execute(select(User).where(User.id == user_id))
+            user = user_result.scalars().first()
+            if user:
+                current_roles = [
+                    r.strip()
+                    for r in (getattr(user, 'roles', '') or '').split(',')
+                    if r.strip() and r.strip() != role.name
+                ]
+                user.roles = ','.join(current_roles)
+                session.add(user)
+
         await session.commit()
 
         logger.info(f"Removed role {role_id} from user {user_id}")

@@ -26,6 +26,7 @@ const Connectors = lazy(() => import("./pages/Connectors"));
 const Authorizers = lazy(() => import("./pages/Authorizers"));
 const Environments = lazy(() => import("./pages/Environments"));
 const MiniCloud = lazy(() => import("./pages/MiniCloud"));
+const Users = lazy(() => import("./pages/Users"));
 
 const PageLoader = () => (
   <Box
@@ -62,6 +63,7 @@ export default function AppRoutes() {
           <Route path="/authorizers" element={<Authorizers />} />
           <Route path="/environments" element={<Environments />} />
           <Route path="/mini-cloud" element={<MiniCloud />} />
+          <Route path="/users" element={<Users />} />
         </Route>
       </Routes>
     </Suspense>

@@ -4,9 +4,10 @@ import uuid
 import time
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.authorizers.rbac import require_permission
 from app.control_plane.contracts import PLATFORM_CONTRACT
 from app.control_plane.failure_injection import (
     inject_burst_traffic,
@@ -37,7 +38,13 @@ from app.control_plane.autoscaler import AutoscalerSignal
 from app.metrics.prometheus import MetricsCollector
 
 
-router = APIRouter(prefix="/mini-cloud", tags=["mini-cloud"])
+# All mini-cloud endpoints require at minimum controlplane:read.
+# Superusers bypass this check automatically via require_permission.
+router = APIRouter(
+    prefix="/mini-cloud",
+    tags=["mini-cloud"],
+    dependencies=[Depends(require_permission("controlplane:read"))],
+)
 _rate_window_cache: Dict[str, list[float]] = {}
 
 
@@ -146,7 +153,7 @@ async def get_policies(path: Optional[str] = Query(default=None)):
     return load_policy_config(path).model_dump()
 
 
-@router.post("/policies/validate")
+@router.post("/policies/validate", dependencies=[Depends(require_permission("controlplane:write"))])
 async def validate_policies(config: PolicyConfig):
     """Validate a policy config payload without applying it.
 
@@ -159,7 +166,7 @@ async def validate_policies(config: PolicyConfig):
     return {"valid": True, "version": config.version}
 
 
-@router.put("/policies")
+@router.put("/policies", dependencies=[Depends(require_permission("controlplane:write"))])
 async def update_policies(config: PolicyConfig, path: Optional[str] = Query(default=None)):
     """Validate and atomically write a new policy config to disk.
 
@@ -174,7 +181,7 @@ async def update_policies(config: PolicyConfig, path: Optional[str] = Query(defa
     return {"written": True, "path": str(target), "version": config.version}
 
 
-@router.post("/services/{service}/instances")
+@router.post("/services/{service}/instances", dependencies=[Depends(require_permission("controlplane:write"))])
 async def register_instance(service: str, payload: RegisterInstanceRequest):
     instance = registry.register_instance(
         service=service,
@@ -187,7 +194,7 @@ async def register_instance(service: str, payload: RegisterInstanceRequest):
     return instance.to_dict()
 
 
-@router.post("/services/{service}/instances/{instance_id}/heartbeat")
+@router.post("/services/{service}/instances/{instance_id}/heartbeat", dependencies=[Depends(require_permission("controlplane:write"))])
 async def heartbeat(service: str, instance_id: str, payload: HeartbeatRequest):
     try:
         instance = registry.heartbeat(
@@ -203,7 +210,7 @@ async def heartbeat(service: str, instance_id: str, payload: HeartbeatRequest):
     return instance.to_dict()
 
 
-@router.post("/services/{service}/instances/{instance_id}/health-status")
+@router.post("/services/{service}/instances/{instance_id}/health-status", dependencies=[Depends(require_permission("controlplane:write"))])
 async def set_health_status(service: str, instance_id: str, payload: HealthStatusRequest):
     try:
         ok = registry.set_health_status(
@@ -226,7 +233,7 @@ async def list_instances(service: str, healthy_only: bool = Query(default=False)
     return [i.to_dict() for i in registry.list_instances(service, healthy_only=healthy_only)]
 
 
-@router.post("/services/{service}/route")
+@router.post("/services/{service}/route", dependencies=[Depends(require_permission("controlplane:write"))])
 async def route_request(service: str, payload: RouteRequest, policy_path: Optional[str] = Query(default=None)):
     request_id = str(uuid.uuid4())
     registry.expire_instances()
@@ -297,14 +304,14 @@ async def route_request(service: str, payload: RouteRequest, policy_path: Option
     }
 
 
-@router.post("/scheduler/jobs")
+@router.post("/scheduler/jobs", dependencies=[Depends(require_permission("controlplane:write"))])
 async def enqueue_job(payload: EnqueueJobRequest):
     job_id = scheduler.enqueue(
         payload.job_type, payload.payload, max_retries=payload.max_retries)
     return {"job_id": job_id}
 
 
-@router.post("/scheduler/jobs/lease")
+@router.post("/scheduler/jobs/lease", dependencies=[Depends(require_permission("controlplane:write"))])
 async def lease_job(payload: LeaseRequest):
     job = scheduler.lease_next(payload.worker_id)
     if job is None:
@@ -312,7 +319,7 @@ async def lease_job(payload: LeaseRequest):
     return {"job": job.__dict__}
 
 
-@router.post("/scheduler/jobs/{job_id}/ack")
+@router.post("/scheduler/jobs/{job_id}/ack", dependencies=[Depends(require_permission("controlplane:write"))])
 async def ack_job(job_id: str, payload: AckJobRequest):
     ok = scheduler.ack(job_id, payload.worker_id)
     if not ok:
@@ -320,7 +327,7 @@ async def ack_job(job_id: str, payload: AckJobRequest):
     return {"status": "acked"}
 
 
-@router.post("/scheduler/jobs/{job_id}/fail")
+@router.post("/scheduler/jobs/{job_id}/fail", dependencies=[Depends(require_permission("controlplane:write"))])
 async def fail_job(job_id: str, payload: FailJobRequest):
     ok = scheduler.fail(job_id, payload.worker_id, reason=payload.reason)
     if not ok:
@@ -333,7 +340,7 @@ async def get_dlq():
     return {"dlq": scheduler.dead_letter_queue()}
 
 
-@router.post("/autoscaler/evaluate")
+@router.post("/autoscaler/evaluate", dependencies=[Depends(require_permission("controlplane:write"))])
 async def evaluate_autoscaler(payload: AutoscaleRequest):
     decision = autoscaler.evaluate(
         AutoscalerSignal(
@@ -344,7 +351,7 @@ async def evaluate_autoscaler(payload: AutoscaleRequest):
     return decision
 
 
-@router.post("/failures/stale-heartbeat/{service}/{instance_id}")
+@router.post("/failures/stale-heartbeat/{service}/{instance_id}", dependencies=[Depends(require_permission("controlplane:write"))])
 async def stale_heartbeat(service: str, instance_id: str, seconds_ago: int = Query(default=300, ge=1)):
     ok = inject_stale_heartbeat(
         registry, service, instance_id, seconds_ago=seconds_ago)
@@ -353,7 +360,7 @@ async def stale_heartbeat(service: str, instance_id: str, seconds_ago: int = Que
     return {"status": "injected", "failure": "stale_heartbeat"}
 
 
-@router.post("/failures/worker-crash/{job_id}")
+@router.post("/failures/worker-crash/{job_id}", dependencies=[Depends(require_permission("controlplane:write"))])
 async def worker_crash(job_id: str):
     ok = inject_worker_crash(scheduler, job_id)
     if not ok:
@@ -361,13 +368,13 @@ async def worker_crash(job_id: str):
     return {"status": "injected", "failure": "worker_crash"}
 
 
-@router.post("/failures/slow-downstream")
+@router.post("/failures/slow-downstream", dependencies=[Depends(require_permission("controlplane:write"))])
 async def slow_downstream(payload: SlowDownstreamRequest):
     set_simulated_latency(payload.latency_ms)
     return inject_slow_downstream(payload.latency_ms)
 
 
-@router.post("/failures/burst-traffic")
+@router.post("/failures/burst-traffic", dependencies=[Depends(require_permission("controlplane:write"))])
 async def burst_traffic(payload: BurstTrafficRequest):
     burst = inject_burst_traffic(payload.rps, payload.duration_seconds)
     for _ in range(burst["total_requests"]):
@@ -376,7 +383,7 @@ async def burst_traffic(payload: BurstTrafficRequest):
     return {**burst, "queue_depth_after_enqueue": scheduler.queue_depth()}
 
 
-@router.post("/control-loop/tick")
+@router.post("/control-loop/tick", dependencies=[Depends(require_permission("controlplane:write"))])
 async def tick_control_loop():
     return control_loop_tick()
 
@@ -391,19 +398,19 @@ async def get_control_loop_status():
     }
 
 
-@router.post("/reset")
+@router.post("/reset", dependencies=[Depends(require_permission("controlplane:write"))])
 async def reset_mini_cloud_state():
     reset_state()
     _rate_window_cache.clear()
     return {"status": "reset"}
 
 
-@router.post("/control-loop/snapshot")
+@router.post("/control-loop/snapshot", dependencies=[Depends(require_permission("controlplane:write"))])
 async def snapshot_control_plane(path: Optional[str] = Query(default=None)):
     return snapshot_state(path)
 
 
-@router.post("/control-loop/restore")
+@router.post("/control-loop/restore", dependencies=[Depends(require_permission("controlplane:write"))])
 async def restore_control_plane(path: Optional[str] = Query(default=None)):
     return restore_state(path)
 
@@ -439,7 +446,7 @@ async def resolve_service(
     return {
         "service": service,
         "strategy": strategy,
-        "selected": instance.to_dict(),
+        "instance": instance.to_dict(),
     }
 
 
@@ -453,6 +460,7 @@ class LinkAPIRequest(BaseModel):
 @router.post(
     "/services/{service}/link-api/{api_id}",
     summary="Link a registered API to a mini-cloud service",
+    dependencies=[Depends(require_permission("controlplane:write"))],
 )
 async def link_api_to_service(
     service: str,
@@ -511,6 +519,7 @@ async def link_api_to_service(
 @router.delete(
     "/services/{service}/link-api/{api_id}",
     summary="Unlink a mini-cloud service from a registered API",
+    dependencies=[Depends(require_permission("controlplane:write"))],
 )
 async def unlink_api_from_service(service: str, api_id: int):
     """Remove ``service_name`` from the API's config, reverting to static URL routing."""

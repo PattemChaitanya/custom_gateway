@@ -74,6 +74,11 @@ async def init_rbac_system(session: AsyncSession, force: bool = False) -> dict:
             {"name": "connector:update", "resource": "connector", "action": "update"},
             {"name": "connector:delete", "resource": "connector", "action": "delete"},
             {"name": "connector:list", "resource": "connector", "action": "list"},
+
+            # Control Plane / Mini-Cloud
+            {"name": "controlplane:read", "resource": "controlplane", "action": "read"},
+            {"name": "controlplane:write",
+                "resource": "controlplane", "action": "write"},
         ]
 
         # Create permissions
@@ -105,6 +110,7 @@ async def init_rbac_system(session: AsyncSession, force: bool = False) -> dict:
                     "role:create", "role:read", "role:update", "role:delete", "role:list", "role:assign",
                     "secret:create", "secret:read", "secret:update", "secret:delete", "secret:list",
                     "connector:create", "connector:read", "connector:update", "connector:delete", "connector:list",
+                    "controlplane:read", "controlplane:write",
                 ]
             },
             {
@@ -115,6 +121,7 @@ async def init_rbac_system(session: AsyncSession, force: bool = False) -> dict:
                     "key:create", "key:read", "key:list",
                     "secret:read", "secret:list",
                     "connector:create", "connector:read", "connector:update", "connector:list",
+                    "controlplane:read",
                 ]
             },
             {

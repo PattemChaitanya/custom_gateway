@@ -109,6 +109,8 @@ async def create_secret(
             tags=secret_data.tags,
         )
 
+        await db.commit()
+
         return SecretResponse(
             id=result.id,
             name=result.name,
@@ -231,6 +233,8 @@ async def update_secret(
             tags=tags,
         )
 
+        await db.commit()
+
         return SecretResponse(
             id=result.id,
             name=result.name,
@@ -265,6 +269,8 @@ async def delete_secret(
             detail=f"Secret '{name}' not found",
         )
 
+    await db.commit()
+
     return {"message": f"Secret '{name}' deleted successfully"}
 
 
@@ -298,6 +304,8 @@ async def rotate_secret(
             description=existing.description,
             tags=existing.tags,
         )
+
+        await db.commit()
 
         return SecretResponse(
             id=result.id,

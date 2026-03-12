@@ -24,9 +24,14 @@ import {
   DeleteForever as ResetIcon,
   CloudUpload as BurstIcon,
   BugReport as FailureIcon,
+  LinkOutlined as LinkIcon,
+  LinkOff as UnlinkIcon,
+  ManageSearch as ResolveIcon,
 } from "@mui/icons-material";
 import PageWrapper from "../components/PageWrapper";
 import * as mc from "../services/miniCloud";
+import { listAPIs, getAPI } from "../services/apis";
+import type { APIItem } from "../services/apis";
 import type {
   AutoscalerDecision,
   ControlLoopStatus,
@@ -1085,6 +1090,270 @@ function FailureInjectionTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Tab 6: Gateway Link (Phase 9)
+// ---------------------------------------------------------------------------
+
+function GatewayLinkTab() {
+  const [apis, setApis] = useState<APIItem[]>([]);
+  const [selectedApiId, setSelectedApiId] = useState("");
+  const [serviceName, setServiceName] = useState("");
+  const [strategy, setStrategy] = useState("round_robin");
+  const [currentLinked, setCurrentLinked] = useState<string | null>(null);
+  const [resolveResult, setResolveResult] = useState<{
+    service: string;
+    strategy: string;
+    instance: ServiceInstance;
+  } | null>(null);
+  const [msg, setMsg] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    listAPIs()
+      .then(setApis)
+      .catch(() => setApis([]));
+  }, []);
+
+  useEffect(() => {
+    const id = parseInt(selectedApiId, 10);
+    const found = apis.find((a) => a.id === id);
+    setCurrentLinked(found?.config?.service_name ?? null);
+    setResolveResult(null);
+  }, [selectedApiId, apis]);
+
+  const refreshApi = async (id: number) => {
+    try {
+      const updated = await getAPI(id);
+      setCurrentLinked(updated?.config?.service_name ?? null);
+      setApis((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, config: updated.config } : a)),
+      );
+    } catch {
+      // silent
+    }
+  };
+
+  const run = async (fn: () => Promise<unknown>, successMsg: string) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await fn();
+      setMsg({ type: "success", text: successMsg });
+      const id = parseInt(selectedApiId, 10);
+      if (id) await refreshApi(id);
+    } catch (e: any) {
+      setMsg({
+        type: "error",
+        text: e?.response?.data?.detail ?? e?.message ?? "Failed",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLink = () => {
+    const id = parseInt(selectedApiId, 10);
+    run(
+      () => mc.linkApiToService(serviceName.trim(), id, strategy),
+      `API ${id} linked → ${serviceName.trim()}`,
+    );
+  };
+
+  const handleUnlink = () => {
+    const id = parseInt(selectedApiId, 10);
+    run(
+      () => mc.unlinkApiFromService(currentLinked!, id),
+      `API ${id} unlinked from ${currentLinked}`,
+    );
+  };
+
+  const handleResolve = async () => {
+    const svc = serviceName.trim() || currentLinked;
+    if (!svc) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await mc.resolveService(svc, strategy);
+      setResolveResult(r as any);
+    } catch (e: any) {
+      setMsg({
+        type: "error",
+        text:
+          e?.response?.data?.detail ??
+          `No healthy instance for service "${svc}"`,
+      });
+      setResolveResult(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const apiId = parseInt(selectedApiId, 10);
+  const resolveSvc = serviceName.trim() || currentLinked;
+
+  return (
+    <Stack spacing={3}>
+      {msg && <Alert severity={msg.type}>{msg.text}</Alert>}
+
+      <Alert severity="info" variant="outlined">
+        Link any registered API to a mini-cloud service. After linking, every
+        request to <code>/gw/{"<api_id>"}/**</code> selects a healthy instance
+        from the ServiceRegistry instead of a static URL — with live routing
+        strategy, TTL expiry, and weighted load-balancing.
+      </Alert>
+
+      {/* Step 1 – pick an API */}
+      <Box>
+        <SectionTitle>1 — Select an API</SectionTitle>
+        <TextField
+          select
+          SelectProps={{ native: true }}
+          value={selectedApiId}
+          onChange={(e) => setSelectedApiId(e.target.value)}
+          size="small"
+          label="API"
+          sx={{ width: 340 }}
+        >
+          <option value="">— choose —</option>
+          {apis.map((a) => (
+            <option key={a.id} value={a.id}>
+              [{a.id}] {a.name}
+              {a.config?.service_name ? ` (→ ${a.config.service_name})` : ""}
+            </option>
+          ))}
+        </TextField>
+        {currentLinked && (
+          <Alert severity="success" sx={{ mt: 1.5 }}>
+            Currently linked to service: <strong>{currentLinked}</strong>
+          </Alert>
+        )}
+      </Box>
+
+      <Divider />
+
+      {/* Step 2 – configure & link */}
+      <Box>
+        <SectionTitle>2 — Link / Unlink</SectionTitle>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          flexWrap="wrap"
+          alignItems="center"
+        >
+          <TextField
+            label="Service Name"
+            value={serviceName}
+            onChange={(e) => setServiceName(e.target.value)}
+            placeholder={currentLinked ?? "e.g. orders"}
+            size="small"
+            sx={{ width: 200 }}
+          />
+          <TextField
+            label="Routing Strategy"
+            select
+            SelectProps={{ native: true }}
+            value={strategy}
+            onChange={(e) => setStrategy(e.target.value)}
+            size="small"
+          >
+            {["round_robin", "weighted", "weighted_round_robin"].map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </TextField>
+          <Button
+            variant="contained"
+            startIcon={<LinkIcon />}
+            onClick={handleLink}
+            disabled={busy || !apiId || !serviceName.trim()}
+          >
+            Link
+          </Button>
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<UnlinkIcon />}
+            onClick={handleUnlink}
+            disabled={busy || !apiId || !currentLinked}
+          >
+            Unlink
+          </Button>
+        </Stack>
+      </Box>
+
+      <Divider />
+
+      {/* Step 3 – resolve preview */}
+      <Box>
+        <SectionTitle>3 — Resolve Preview</SectionTitle>
+        <Typography variant="body2" color="text.secondary" mb={1.5}>
+          Preview which instance the gateway would select right now for{" "}
+          <strong>{resolveSvc ?? "—"}</strong> with strategy{" "}
+          <strong>{strategy}</strong> — no real traffic is sent.
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<ResolveIcon />}
+          onClick={handleResolve}
+          disabled={busy || !resolveSvc}
+        >
+          Resolve
+        </Button>
+
+        {resolveResult && (
+          <Card variant="outlined" sx={{ mt: 2 }}>
+            <CardContent>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                display="block"
+                mb={0.5}
+              >
+                Selected instance for &quot;{resolveResult.service}&quot; via{" "}
+                {resolveResult.strategy}
+              </Typography>
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                flexWrap="wrap"
+              >
+                <Chip
+                  label={resolveResult.instance.instance_id}
+                  color="primary"
+                  size="small"
+                />
+                <Typography variant="body2" fontFamily="monospace">
+                  {resolveResult.instance.url}
+                </Typography>
+                <Chip
+                  size="small"
+                  label={`w=${resolveResult.instance.weight}`}
+                  variant="outlined"
+                />
+                <StatusChip
+                  ok={resolveResult.instance.healthy}
+                  label={
+                    resolveResult.instance.healthy ? "healthy" : "unhealthy"
+                  }
+                />
+                <Chip
+                  size="small"
+                  label={resolveResult.instance.health_status}
+                />
+              </Stack>
+            </CardContent>
+          </Card>
+        )}
+      </Box>
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -1095,6 +1364,7 @@ const TABS = [
   { label: "Autoscaler" },
   { label: "Policies" },
   { label: "Failure Injection" },
+  { label: "Gateway Link" },
 ];
 
 export default function MiniCloud() {
@@ -1128,6 +1398,7 @@ export default function MiniCloud() {
       {tab === 3 && <AutoscalerTab />}
       {tab === 4 && <PoliciesTab />}
       {tab === 5 && <FailureInjectionTab />}
+      {tab === 6 && <GatewayLinkTab />}
     </PageWrapper>
   );
 }

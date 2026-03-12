@@ -3,6 +3,7 @@ import { Navigate, Outlet } from "react-router-dom";
 import { useAuthStore } from "../hooks/useAuth";
 import { getCurrentUserInfo } from "../services/auth";
 import Header from "./Header";
+import Sidebar from "./Sidebar";
 import { CircularProgress, Box } from "@mui/material";
 
 export default function ProtectedRoute() {
@@ -54,12 +55,19 @@ export default function ProtectedRoute() {
   }
 
   return (
-    <>
+    <Box sx={{ display: "flex" }}>
       <Header />
-      {/* spacer ensures main content is not hidden under the fixed header */}
-      <div className="main-with-topbar">
+      <Sidebar />
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          pt: "64px", // fixed AppBar height
+          minWidth: 0,
+        }}
+      >
         <Outlet />
-      </div>
-    </>
+      </Box>
+    </Box>
   );
 }

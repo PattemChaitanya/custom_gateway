@@ -91,7 +91,7 @@ export const Environments: React.FC = () => {
   const isDefault = (env: Environment) => DEFAULT_SLUGS.includes(env.slug);
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
+    <Container maxWidth="xl" sx={{ py: 2 }}>
       <Box sx={{ mb: 4 }}>
         <Stack
           direction="row"

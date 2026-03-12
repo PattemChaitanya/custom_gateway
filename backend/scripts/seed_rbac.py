@@ -105,6 +105,12 @@ DEFAULT_PERMISSIONS = [
         "action": "update", "description": "Update secrets"},
     {"name": "secret:delete", "resource": "secret",
         "action": "delete", "description": "Delete secrets"},
+
+    # Control Plane (Mini-Cloud)
+    {"name": "controlplane:read", "resource": "controlplane",
+        "action": "read", "description": "View control plane state and metrics"},
+    {"name": "controlplane:write", "resource": "controlplane",
+        "action": "write", "description": "Mutate control plane state (register instances, enqueue jobs, update policies)"},
 ]
 
 
@@ -122,6 +128,7 @@ DEFAULT_ROLES = [
             "connector:create", "connector:read", "connector:update", "connector:delete", "connector:list",
             "audit:read", "metrics:read",
             "secret:create", "secret:read", "secret:update", "secret:delete",
+            "controlplane:read", "controlplane:write",
         ]
     },
     {
@@ -132,6 +139,7 @@ DEFAULT_ROLES = [
             "connector:create", "connector:read", "connector:update", "connector:list",
             "key:create", "key:read", "key:list",
             "metrics:read",
+            "controlplane:read",
         ]
     },
     {

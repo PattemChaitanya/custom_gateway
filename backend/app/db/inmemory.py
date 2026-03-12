@@ -12,9 +12,10 @@ Provides a simple in-memory database implementation that mimics the SQLAlchemy
 AsyncSession interface for seamless fallback when PostgreSQL is unavailable.
 """
 
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Dict, Optional, List, Any
 import logging
-from types import SimpleNamespace
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,8 @@ class InMemoryDB:
         self._user_roles: Dict[int, SimpleNamespace] = {}
         self._api_keys: Dict[int, SimpleNamespace] = {}
         self._environments: Dict[int, SimpleNamespace] = {}
+        self._secrets: Dict[int, SimpleNamespace] = {}
+        self._audit_logs: Dict[int, SimpleNamespace] = {}
 
         # Secondary indexes for O(1) lookups on common fields
         self._user_email_index: Dict[str, int] = {}  # email -> user_id
@@ -125,6 +128,8 @@ class InMemoryDB:
         self._next_user_role_id = 1
         self._next_api_key_id = 1
         self._next_environment_id = 1
+        self._next_secret_id = 1
+        self._next_audit_log_id = 1
 
         logger.info("In-memory database initialized")
 
@@ -319,6 +324,16 @@ class InMemoryDB:
                     obj.id = self._next_environment_id
                     self._next_environment_id += 1
                 self._environments[obj.id] = obj
+            elif 'Secret' in type_name:
+                if not hasattr(obj, 'id') or obj.id is None:
+                    obj.id = self._next_secret_id
+                    self._next_secret_id += 1
+                self._secrets[obj.id] = obj
+            elif 'AuditLog' in type_name:
+                if not hasattr(obj, 'id') or obj.id is None:
+                    obj.id = self._next_audit_log_id
+                    self._next_audit_log_id += 1
+                self._audit_logs[obj.id] = obj
 
     async def delete(self, obj: SimpleNamespace) -> None:
         """
@@ -350,6 +365,10 @@ class InMemoryDB:
                 del self._api_keys[obj.id]
             elif obj.id in self._environments:
                 del self._environments[obj.id]
+            elif obj.id in self._secrets:
+                del self._secrets[obj.id]
+            elif obj.id in self._audit_logs:
+                del self._audit_logs[obj.id]
 
     async def execute(self, statement):
         """
@@ -362,7 +381,7 @@ class InMemoryDB:
             QueryResult: Object with scalars() method for result access
         """
         # Simple implementation to handle basic select queries
-        from app.db.models import User, OTP, RefreshToken, Role, Permission, UserRole, APIKey, Environment
+        from app.db.models import User, OTP, RefreshToken, Role, Permission, UserRole, APIKey, Environment, Secret, AuditLog
 
         # Handle UPDATE statements (e.g. update(APIKey).where(...).values(...))
         if hasattr(statement, 'entity_description') and not hasattr(statement, 'column_descriptions'):
@@ -377,6 +396,8 @@ class InMemoryDB:
                     UserRole: self._user_roles,
                     APIKey: self._api_keys,
                     Environment: self._environments,
+                    Secret: self._secrets,
+                    AuditLog: self._audit_logs,
                 }
                 storage = storage_map.get(entity_type)
                 if not storage:
@@ -453,6 +474,10 @@ class InMemoryDB:
                         results = list(self._api_keys.values())
                     elif entity_type == Environment or entity_name == 'Environment':
                         results = list(self._environments.values())
+                    elif entity_type == Secret or entity_name == 'Secret':
+                        results = list(self._secrets.values())
+                    elif entity_type == AuditLog or entity_name == 'AuditLog':
+                        results = list(self._audit_logs.values())
                     else:
                         results = []
 
@@ -544,6 +569,8 @@ class InMemoryDB:
         self._user_roles.clear()
         self._api_keys.clear()
         self._environments.clear()
+        self._secrets.clear()
+        self._audit_logs.clear()
         self._user_email_index.clear()
 
         self._next_api_id = 1
@@ -552,6 +579,8 @@ class InMemoryDB:
         self._next_otp_id = 1
         self._next_api_key_id = 1
         self._next_environment_id = 1
+        self._next_secret_id = 1
+        self._next_audit_log_id = 1
 
         logger.info("In-memory database cleared")
 
@@ -569,7 +598,136 @@ class InMemoryDB:
             "otps": len(self._otps),
             "api_keys": len(self._api_keys),
             "environments": len(self._environments),
+            "secrets": len(self._secrets),
+            "audit_logs": len(self._audit_logs),
         }
+
+    def _normalize_dt(self, value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            dt = value
+        elif isinstance(value, str):
+            try:
+                dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        else:
+            return None
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
+    async def list_audit_logs(
+        self,
+        user_id: Optional[int] = None,
+        action: Optional[str] = None,
+        status: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[SimpleNamespace]:
+        start_dt = self._normalize_dt(start_date)
+        end_dt = self._normalize_dt(end_date)
+
+        rows = list(self._audit_logs.values())
+        if user_id is not None:
+            rows = [r for r in rows if getattr(r, "user_id", None) == user_id]
+        if action and action.strip():
+            target = action.strip().lower()
+            rows = [r for r in rows if str(
+                getattr(r, "action", "")).lower() == target]
+        if status and status.strip():
+            target = status.strip().lower()
+            rows = [r for r in rows if str(
+                getattr(r, "status", "")).lower() == target]
+        if start_dt is not None:
+            rows = [
+                r for r in rows
+                if (self._normalize_dt(getattr(r, "timestamp", None)) or datetime.min.replace(tzinfo=timezone.utc)) >= start_dt
+            ]
+        if end_dt is not None:
+            rows = [
+                r for r in rows
+                if (self._normalize_dt(getattr(r, "timestamp", None)) or datetime.max.replace(tzinfo=timezone.utc)) <= end_dt
+            ]
+
+        rows.sort(key=lambda r: self._normalize_dt(getattr(r, "timestamp", None))
+                  or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        return rows[:limit]
+
+    async def get_audit_log_statistics(self) -> Dict[str, Any]:
+        rows = list(self._audit_logs.values())
+        logs_by_type: Dict[str, int] = {}
+        logs_by_user: Dict[int, int] = {}
+        oldest = None
+
+        for row in rows:
+            action = getattr(row, "action", None)
+            if action:
+                logs_by_type[action] = logs_by_type.get(action, 0) + 1
+
+            uid = getattr(row, "user_id", None)
+            if uid is not None:
+                logs_by_user[uid] = logs_by_user.get(uid, 0) + 1
+
+            ts = self._normalize_dt(getattr(row, "timestamp", None))
+            if ts and (oldest is None or ts < oldest):
+                oldest = ts
+
+        return {
+            "total_logs": len(rows),
+            "audit_logs_count": len(rows),
+            "metrics_count": 0,
+            "logs_by_type": logs_by_type,
+            "logs_by_user": logs_by_user,
+            "oldest_audit_log": oldest.isoformat() if oldest else None,
+            "oldest_metric": None,
+        }
+
+    async def list_user_audit_activity(self, target_user_id: int, days: int = 30, limit: int = 500) -> List[SimpleNamespace]:
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        rows = [
+            r for r in self._audit_logs.values()
+            if getattr(r, "user_id", None) == target_user_id and
+            (self._normalize_dt(getattr(r, "timestamp", None))
+             or datetime.min.replace(tzinfo=timezone.utc)) >= since
+        ]
+        rows.sort(key=lambda r: self._normalize_dt(getattr(r, "timestamp", None))
+                  or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        return rows[:limit]
+
+    async def list_failed_audit_attempts(self, hours: int = 24, limit: int = 500) -> List[SimpleNamespace]:
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+        rows = []
+        for row in self._audit_logs.values():
+            ts = self._normalize_dt(getattr(row, "timestamp", None))
+            if not ts or ts < since:
+                continue
+
+            status_val = str(getattr(row, "status", "")).lower()
+            action_val = str(getattr(row, "action", "")).lower()
+            if status_val in ("failure", "error") or "failure" in action_val:
+                rows.append(row)
+
+        rows.sort(key=lambda r: self._normalize_dt(getattr(r, "timestamp", None))
+                  or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        return rows[:limit]
+
+    async def cleanup_old_logs(self, retention_days: int = 30) -> int:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        to_delete = []
+        for row_id, row in self._audit_logs.items():
+            ts = self._normalize_dt(getattr(row, "timestamp", None))
+            if ts and ts < cutoff:
+                to_delete.append(row_id)
+
+        for row_id in to_delete:
+            del self._audit_logs[row_id]
+
+        return len(to_delete)
 
     def __repr__(self) -> str:
         """String representation of the in-memory database."""

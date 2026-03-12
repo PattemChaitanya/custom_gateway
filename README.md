@@ -1,77 +1,122 @@
-# Gateway Management System 🚀
+# Mini Cloud Platform — API Gateway
 
-An enterprise-grade API Gateway Management System with comprehensive security, monitoring, and connectivity features.
+A **reference implementation of a cloud API gateway** built on a single node. It demonstrates production cloud engineering patterns: service discovery, job scheduling, signal-driven autoscaling, multi-algorithm rate limiting, three auth modes, and Fernet-encrypted secrets — all wired through a 9-step async proxy pipeline.
 
-## ✨ Features
-
-✅ **Input Validation & Sanitization** - XSS/SQL injection prevention  
-✅ **Enhanced API Keys** - Hashing, expiration, usage tracking  
-✅ **Secure Secret Management** - Encrypted storage with Fernet  
-✅ **Centralized Logging** - 30-day retention with audit trail  
-✅ **Metrics & Monitoring** - Prometheus integration with latency tracking  
-✅ **Rate Limiting** - Multiple algorithms (fixed window, sliding window, token bucket)  
-✅ **Load Balancing** - Round-robin, least connections, weighted distribution  
-✅ **CRUD Connectors** - PostgreSQL, MongoDB, Redis, Kafka, S3, Azure Blob  
-✅ **Authorization** - RBAC + ABAC with policy engine  
-✅ **Module System** - Script management and execution framework  
+> "A cloud built on one machine can still teach the same lessons as a cloud built on ten thousand. The physics change, but the ideas remain gloriously the same."
 
 ---
 
-## 📚 Documentation
+## Architecture
 
-- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Complete feature documentation
-- **[backend/SETUP.md](backend/SETUP.md)** - Quick setup guide
-- **[backend/API_REFERENCE.md](backend/API_REFERENCE.md)** - API endpoint reference
-- **[backend/DEPLOYMENT.md](backend/DEPLOYMENT.md)** - Production deployment guide
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                          CLIENT REQUEST                              │
+└─────────────────────────────┬────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                     GATEWAY PROXY PIPELINE                           │
+│                                                                      │
+│  1. Resolve API ──► 2. Lifecycle Guard ──► 3. Target Resolution      │
+│        │                   │                       │                 │
+│        │            draft→503            mini-cloud registry         │
+│        │            deprecated→410       backend pool LB             │
+│        │                                deployment override          │
+│        │                                static config                │
+│        ▼                   ▼                       ▼                 │
+│  4. Auth Policy ──► 5. Rate Limit ──► 6. Secret Injection            │
+│        │                   │                       │                 │
+│     API Key             Fixed Window        ${secret:name}           │
+│     JWT/Bearer          Sliding Window      Fernet-encrypted         │
+│     OAuth2              Token Bucket        from DB secrets          │
+│     (RFC 7662)          (Redis-backed)                               │
+│        ▼                   ▼                       ▼                 │
+│  7. Schema Validation ──► 8. Proxy ──► 9. Tracing Headers            │
+│        │                   │                       │                 │
+│     JSON Draft 7       httpx async          X-Gateway-*              │
+│     field-level        pooled client        X-Request-ID             │
+│     422 errors         200 connections                               │
+└─────────────────────────────┬────────────────────────────────────────┘
+                              │
+              ┌───────────────┼────────────────┐
+              ▼               ▼                ▼
+    ┌─────────────┐   ┌─────────────┐  ┌────────────────┐
+    │   Backend   │   │  Backend    │  │  Mini-Cloud    │
+    │   Pool #1   │   │  Pool #2    │  │  ServiceReg.   │
+    │  (weighted) │   │  (rr)       │  │  (TTL-based)   │
+    └─────────────┘   └─────────────┘  └────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                      MINI-CLOUD CONTROL PLANE                        │
+│                                                                      │
+│   ServiceRegistry ──► ControlLoopScheduler ──► AutoscalerLoop        │
+│   (TTL heartbeats)    (job queue + DLQ +      (queue_depth +         │
+│   (3 LB strategies)    lease ownership +       latency_p95 signals + │
+│                        exp-backoff retries)     cooldown + min/max)  │
+│                                                                      │
+│   PolicyConfig ──► hot-reload from disk (no restart)                 │
+│   FailureInjection ──► stale-heartbeat / worker-crash /              │
+│                         slow-downstream / burst-traffic              │
+│   State Durability ──► snapshot() / restore() across restarts        │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                          OBSERVABILITY                               │
+│                                                                      │
+│  Prometheus metrics (/metrics)   DB-backed Metric rows               │
+│  Structlog JSON logs             AuditLog per action                 │
+│  X-Response-Time header          X-Request-ID tracing                │
+└──────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start (Docker — recommended)
+
+```bash
+# Clone and start everything in one command
+git clone https://github.com/PattemChaitanya/custom_gateway.git
+cd custom_gateway
+docker compose up --build
+```
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:5173 |
+| API (FastAPI) | http://localhost:8000 |
+| Interactive docs | http://localhost:8000/docs |
+| Prometheus metrics | http://localhost:8000/metrics |
+
+First login: `admin@example.com` / `changeme123`
+
+---
+
+## Manual Setup (development)
 
 ### Prerequisites
 - Python 3.13+
-- PostgreSQL
-- Redis
+- PostgreSQL 14+
+- Redis 7+
 
-### Installation
-
-```powershell
-# Clone repository
-cd "d:\projects\Gateway management"
-
-# Create virtual environment
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-# Install dependencies
+```bash
 cd backend
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your configuration
+# Set environment
+cp .env.example .env             # edit DATABASE_URL, REDIS_URL, SECRET_KEY
 
-# Generate encryption keys
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-
-# Run migrations
+# Run migrations and start
 alembic upgrade head
-
-# Start server
 uvicorn app.main:app --reload
 ```
 
-### Verify Installation
-
-```powershell
-# Run verification tests
-python scripts/verify_installation.py
-
-# Check health
-curl http://localhost:8000/health
-
-# View API docs
-# Open http://localhost:8000/docs
+```bash
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
 ```
 
 ---
@@ -94,194 +139,67 @@ Gateway management/
 │   │   ├── security/           # API keys, secrets, encryption
 │   │   ├── validation/         # Input validation & sanitization
 │   │   └── db/                 # Database models
-│   ├── alembic/                # Database migrations
-│   ├── scripts/                # Utility scripts
-│   ├── tests/                  # Test suite
-│   ├── requirements.txt        # Python dependencies
-│   ├── SETUP.md               # Setup instructions
-│   ├── API_REFERENCE.md       # API documentation
-│   └── DEPLOYMENT.md          # Deployment guide
+│   ├── alembic/                # 7 migration versions
+│   ├── tests/                  # 35 test files — real algorithmic assertions
+│   ├── requirements.txt
+│   └── Dockerfile
 │
-├── frontend/                   # React + TypeScript frontend
+├── frontend/
 │   ├── src/
-│   │   ├── components/        # UI components
-│   │   ├── pages/             # Page views
-│   │   ├── hooks/             # Custom hooks
-│   │   └── services/          # API clients
-│   ├── package.json           # Dependencies
-│   └── README.md              # Frontend docs
+│   │   ├── pages/             # Dashboard, APIs, APIDetail, MiniCloud, Secrets, AuditLogs ...
+│   │   ├── services/          # Typed API clients for every backend endpoint
+│   │   ├── components/        # ProtectedRoute, PermissionGuard, Skeletons
+│   │   └── hooks/             # useAuth (Zustand), useQueryCache
+│   ├── Dockerfile
+│   └── nginx.conf
 │
-├── docs/                      # Documentation
-│   ├── database-architecture-diagram.md
-│   ├── database-refactoring.md
-│   ├── file-structure.md
-│   └── onboarding-developer.md
-│
-└── IMPLEMENTATION_SUMMARY.md  # Complete implementation guide
+├── docs/                      # RBAC guide, database architecture, platform contract
+├── docker-compose.yml         # One-command local stack
+└── README.md
 ```
 
 ---
 
-## 🎯 Key Technologies
+## Key Engineering Decisions
 
-**Backend:**
-- FastAPI 0.109.1 - High-performance async framework
-- SQLAlchemy 2.0.46 - ORM with asyncpg for PostgreSQL
-- Redis 5.0.0 - Rate limiting and caching
-- Prometheus - Metrics collection
-- Cryptography 41.0.4 - Fernet encryption
-- Pydantic 2.12.4 - Request validation
-- Alembic - Database migrations
-
-**Frontend:**
-- React + TypeScript
-- Vite - Build tool
-- Material-UI - Component library
+| Decision | Choice | Reason |
+|---|---|---|
+| Rate limiter backend | Redis async | Distributed; in-memory strategies kept for unit tests only |
+| Auth enforcement | `Depends(require_permission())` | Compile-time route guard, not runtime string matching |
+| Secret storage | Fernet + PBKDF2-HMAC-SHA256 (100k iterations) | AES-128 with deterministic key expansion from env vars |
+| API key hashing | Salted SHA-256 + `hmac.compare_digest` | Constant-time comparison prevents timing attacks |
+| Control-plane state | JSON snapshot/restore on disk | Survives restarts without a dedicated state store |
+| DB fallback | PostgreSQL → SQLite → in-memory | Tests and dev need zero infrastructure |
+| Proxy client | `httpx.AsyncClient` pooled (200 conn) | Non-blocking, RFC 7230 hop-by-hop header stripping |
 
 ---
 
-## 🔒 Security Features
+## Stack
 
-- **API Keys**: SHA256 hashing with salt, expiration tracking
-- **Secrets**: Fernet encryption at rest
-- **Input Validation**: XSS/SQL injection prevention on all inputs
-- **Rate Limiting**: Redis-based distributed rate limiting
-- **Authorization**: RBAC and ABAC with policy engine
-- **Audit Logging**: All sensitive operations logged
-- **CORS**: Configurable cross-origin policies
+**Backend:** FastAPI 0.109 · SQLAlchemy 2.0 async · asyncpg · Redis 7 · httpx · python-jose · cryptography · prometheus-client · Pydantic 2 · Alembic · structlog
+
+**Frontend:** React 18 · TypeScript · Vite · Material-UI · Zustand · Axios
+
+**Infrastructure:** PostgreSQL 16 · Redis 7 · Docker Compose · nginx
 
 ---
 
-## 📊 Monitoring & Observability
+## Running Tests
 
-- **Prometheus Metrics**: Request rate, latency (p50/p90/p95/p99), errors
-- **Health Checks**: Database and Redis connection monitoring
-- **Audit Logs**: 30-day retention with automatic cleanup
-- **Structured Logging**: JSON-formatted logs with correlation IDs
-
----
-
-## 🔌 Connectors
-
-Pre-built connectors for:
-- **Databases**: PostgreSQL, MongoDB
-- **Queues**: Redis, Kafka (placeholder)
-- **Storage**: AWS S3, Azure Blob Storage (placeholder)
-
-All connectors support:
-- Connection pooling
-- Health checks
-- Automatic reconnection
-- Configuration management
-
----
-
-## ⚖️ Load Balancing
-
-Multiple algorithms available:
-- **Round Robin**: Equal distribution
-- **Least Connections**: Send to least busy backend
-- **Weighted**: Distribute based on backend capacity
-
-Features:
-- Health checking
-- Automatic failover
-- Real-time backend status
-
----
-
-## 📈 Performance
-
-- **Async/Await**: Throughout for maximum concurrency
-- **Connection Pooling**: Database and Redis
-- **Indexed Queries**: All frequently accessed columns
-- **Redis Caching**: For rate limiting and frequently accessed data
-
----
-
-## 🧪 Testing
-
-```powershell
-# Run all tests
+```bash
 cd backend
-pytest
-
-# Run with coverage
-pytest --cov=app --cov-report=html
-
-# Run verification script
-python scripts/verify_installation.py
+pytest tests/ -v                     # full suite (SQLite, no Redis required)
+pytest tests/test_e2e_gateway.py     # 10-phase end-to-end pipeline test
+pytest tests/test_mini_cloud_*.py    # control plane suite (14 files)
 ```
 
 ---
 
-## 🚀 Deployment
+## Documentation
 
-See [backend/DEPLOYMENT.md](backend/DEPLOYMENT.md) for:
-- Production setup
-- Nginx reverse proxy configuration
-- SSL/TLS setup with Let's Encrypt
-- Systemd service configuration
-- Monitoring setup
-- Backup strategies
-- Security hardening
-
----
-
-## 📞 API Endpoints
-
-### Core Endpoints
-- `POST /keys` - Create API key
-- `GET /metrics` - Prometheus metrics
-- `GET /health` - Health check
-- `POST /connectors` - Create connector
-- `POST /backend-pools` - Create load balancer pool
-
-See [backend/API_REFERENCE.md](backend/API_REFERENCE.md) for complete API documentation.
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is proprietary and confidential.
-
----
-
-## 🎉 Status
-
-✅ **Backend Implementation Complete** - All features implemented and tested  
-🔄 **Frontend Integration** - In progress  
-📝 **Documentation** - Complete  
-🚀 **Production Ready** - Yes (backend)
-
----
-
-## 💡 Next Steps
-
-1. ✅ Install dependencies: `pip install -r backend/requirements.txt`
-2. ✅ Configure environment: Edit `backend/.env`
-3. ✅ Run migrations: `alembic upgrade head`
-4. ✅ Verify installation: `python scripts/verify_installation.py`
-5. 🔄 Start backend: `uvicorn app.main:app --reload`
-6. 🔄 Build frontend UI for all features
-7. 🔄 Write comprehensive tests
-8. 🔄 Deploy to production
-
----
-
-**For detailed implementation information, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)**
-
-### 1. Prerequisites
+- [docs/mini-cloud-platform-contract.md](docs/mini-cloud-platform-contract.md) — platform guarantees, tradeoffs, SLOs
+- [docs/rbac-authorization-guide.md](docs/rbac-authorization-guide.md) — RBAC roles, permissions, setup
+- [docs/database-architecture-diagram.md](docs/database-architecture-diagram.md) — connection priority chain
 
 * **Python 3.10+** installed
 * **Node.js 18+** installed

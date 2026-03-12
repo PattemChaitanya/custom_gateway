@@ -1,34 +1,41 @@
-from app.metrics.prometheus import metrics_endpoint
-import asyncio
-from app.api.mini_cloud import router as mini_cloud_router
-from app.api.admin import router as admin_router
-from app.api.authorizers import router as authorizers_router
-from app.api.connectors import router as connectors_router
-from app.api.keys import router as keys_router
-from app.api.secrets import router as secrets_router
-from app.gateway.router import router as gateway_router
-from app.authorizers.middleware import register_authorization_middleware
-from app.rate_limiter.middleware import register_rate_limit_middleware
-from app.metrics.middleware import register_metrics_middleware
-from app.validation.middleware import register_validation_middleware
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi import Request
-from app.api import user
-from app.api.auth import auth_router
-from app.api.apis import router as apis_router
-from .logging_config import configure_logging, get_logger
-from app.middleware.request_logging import register_request_logging
-from app.middleware.request_id import register_request_id_middleware
-from app.db import get_db_manager
+from app.load_balancer.pool import BackendPoolManager
+from app.load_balancer.health import HealthChecker
 from app.control_plane.runtime import restore_state, run_control_loop, snapshot_state
+from app.db import get_db_manager
+from app.middleware.request_id import register_request_id_middleware
+from app.middleware.request_logging import register_request_logging
+from app.api.apis import router as apis_router
+from app.api.auth import auth_router
+from app.api import user
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from app.db.connector import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import FastAPI, Depends
+from app.validation.middleware import register_validation_middleware
+from app.metrics.middleware import register_metrics_middleware
+from app.rate_limiter.middleware import register_rate_limit_middleware
+from app.authorizers.middleware import register_authorization_middleware
+from app.middleware.audit import register_audit_middleware
+from app.gateway.router import router as gateway_router
+from app.api.secrets import router as secrets_router
+from app.api.keys import router as keys_router
+from app.api.connectors import router as connectors_router
+from app.api.authorizers import router as authorizers_router
+from app.api.admin import router as admin_router
+from app.api.audit_logs import router as audit_logs_router
+from app.api.mini_cloud import router as mini_cloud_router
+import asyncio
+from app.metrics.prometheus import metrics_endpoint
+from .logging_config import configure_logging, get_logger
 
-# structured logging
+# Configure logging before importing modules that may emit startup logs.
 configure_logging(level="INFO")
 logger = get_logger("gateway")
 logger.info("Server starting")
+
 
 DEFAULT_ENVIRONMENTS = [
     {"name": "Production", "slug": "production",
@@ -79,6 +86,8 @@ async def lifespan(app: FastAPI):
     db_manager = get_db_manager()
     control_loop_stop_event = asyncio.Event()
     control_loop_task = None
+    health_checker = None
+    hc_session = None
 
     try:
         # Determine echo_sql from environment
@@ -131,6 +140,17 @@ async def lifespan(app: FastAPI):
             logger.warning(
                 f"Failed to start mini-cloud control loop: {ctrl_err}")
 
+        # Start periodic backend health checks (PostgreSQL mode only).
+        try:
+            if db_manager.is_using_primary and db_manager.session_factory:
+                hc_session = db_manager.session_factory()
+                pool_manager = BackendPoolManager(hc_session)
+                health_checker = HealthChecker(pool_manager)
+                await health_checker.start_health_checks()
+                logger.info("Backend pool health checker started")
+        except Exception as hc_err:
+            logger.warning(f"Health checker not started: {hc_err}")
+
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
         logger.warning("Attempting to use in-memory fallback")
@@ -148,9 +168,17 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown
     logger.info("Shutting down application")
     try:
+        if health_checker:
+            await health_checker.stop_health_checks()
+        if hc_session:
+            await hc_session.close()
         control_loop_stop_event.set()
         if control_loop_task:
-            await control_loop_task
+            control_loop_task.cancel()
+            try:
+                await control_loop_task
+            except asyncio.CancelledError:
+                pass
         snapshot_info = snapshot_state()
         logger.info(f"Mini-cloud control-plane snapshot: {snapshot_info}")
         await db_manager.shutdown()
@@ -178,6 +206,7 @@ register_validation_middleware(
 register_metrics_middleware(app)  # Metrics collection
 register_rate_limit_middleware(
     app, global_limit=1000, global_window=60)  # Rate limiting
+register_audit_middleware(app)  # Centralized audit logging (runs after auth)
 register_authorization_middleware(app)  # Authorization
 
 # CORS — added last so it is the outermost middleware
@@ -201,6 +230,7 @@ app.include_router(connectors_router)
 app.include_router(secrets_router)
 app.include_router(authorizers_router)
 app.include_router(admin_router)
+app.include_router(audit_logs_router)
 app.include_router(mini_cloud_router)
 
 # Gateway proxy — data plane: /gw/{api_id}/{path}
@@ -214,6 +244,14 @@ app.include_router(gateway_router)
 async def metrics():
     """Prometheus metrics endpoint."""
     return metrics_endpoint()
+
+
+@app.get("/metrics/summary", tags=["metrics"])
+async def metrics_summary(db: AsyncSession = Depends(get_db)):
+    """Aggregated request metrics for the last 7 days (Dashboard chart source)."""
+    from app.metrics.storage import MetricsStorage
+    storage = MetricsStorage(db)
+    return await storage.get_metrics_summary()
 
 
 # Ensure error responses include CORS headers when raised (some errors can bypass

@@ -1,6 +1,9 @@
-"""Compatibility wrapper for load balancing algorithms.
+"""DEPRECATED: Compatibility wrapper — use ``app.load_balancer`` in production.
 
-Re-exports algorithm implementations from `app.load_balancer.algorithms`.
+This module re-exports algorithm implementations from ``app.load_balancer``
+under the class names that ``tests/test_load_balancing.py`` imports.
+Do not use these wrapper classes in application code; import directly from
+``app.load_balancer.algorithms`` instead.
 """
 from app.load_balancer.algorithms import (
     RoundRobinLoadBalancer,
