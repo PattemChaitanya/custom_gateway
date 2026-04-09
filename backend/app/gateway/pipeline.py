@@ -232,8 +232,12 @@ async def _check_jwt(request: Request, db: AsyncSession, config: dict) -> None:
     token = auth_header[len("Bearer "):]
 
     # Resolve the signing secret
-    raw_secret = config.get("secret") or os.getenv(
-        "JWT_SECRET", "change-this-secret")
+    raw_secret = config.get("secret") or os.getenv("JWT_SECRET")
+    if not raw_secret:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Auth policy misconfigured: JWT_SECRET not set",
+        )
     signing_secret = await _resolve_secret_ref(str(raw_secret), db)
 
     try:
@@ -346,6 +350,65 @@ async def _check_oauth2(request: Request, db: AsyncSession, config: dict) -> Non
 
 
 # ---------------------------------------------------------------------------
+# Per-API-key rate-limit enforcement (spec: ratelimit:{account_id}:{key_hash})
+# ---------------------------------------------------------------------------
+
+async def enforce_api_key_rate_limit(api: API, request: Request, db: AsyncSession) -> None:
+    """Enforce per-API-key sliding-window rate limit using the key's rpm config.
+
+    Key format (spec): ``ratelimit:{account_id}:{sha256(raw_key)}``
+    Window: 60 seconds (rpm → requests per minute)
+    rpm sourced from ``APIKey.metadata_json["rate_limit_rpm"]`` (default 100).
+
+    Only runs when an X-API-Key header is present. Skipped silently on
+    JWT/OAuth2 requests or when Redis is unavailable (fail-open).
+    """
+    raw_key = request.headers.get("X-API-Key") or request.headers.get("x-api-key")
+    if not raw_key:
+        return  # Not an API-key request — nothing to do
+
+    api_key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+
+    # Look up the matching APIKey record for rpm config + account_id
+    from sqlalchemy.future import select as sa_select
+    from app.db.models import APIKey
+
+    result = await db.execute(
+        sa_select(APIKey).where(APIKey.revoked == False)  # noqa: E712
+    )
+    matched_key = None
+    for k in result.scalars().all():
+        if _verify_api_key(raw_key, k.key):
+            matched_key = k
+            break
+
+    if matched_key is None:
+        return  # Key invalid — auth layer will/has already rejected
+
+    rpm: int = 100
+    if matched_key.metadata_json and isinstance(matched_key.metadata_json, dict):
+        rpm = int(matched_key.metadata_json.get("rate_limit_rpm", 100))
+
+    account_id = matched_key.account_id or 0
+    rate_key = f"ratelimit:{account_id}:{api_key_hash}"
+
+    allowed, info = await _sliding_limiter.is_allowed(rate_key, rpm, 60)
+    if not allowed:
+        retry_after = str(info.get("reset", 60))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": "rate_limit_exceeded",
+                "api_id": api.id,
+                "limit": info.get("limit", rpm),
+                "remaining": 0,
+                "retry_after_seconds": retry_after,
+            },
+            headers={"Retry-After": retry_after},
+        )
+
+
+# ---------------------------------------------------------------------------
 # Rate-limit enforcement
 # ---------------------------------------------------------------------------
 
@@ -403,6 +466,61 @@ async def enforce_rate_limit(api: API, request: Request) -> None:
             },
             headers={"Retry-After": retry_after},
         )
+
+
+# ---------------------------------------------------------------------------
+# Per-API body size enforcement
+# ---------------------------------------------------------------------------
+
+_GLOBAL_MAX_BODY_SIZE = int(os.getenv("MAX_BODY_SIZE", str(10 * 1024 * 1024)))  # 10 MB
+
+
+async def enforce_body_size(api: API, request: Request) -> None:
+    """Enforce per-API maximum request body size.
+
+    Reads the limit from ``api.config.max_body_size`` (bytes).  Falls back to
+    the global ``MAX_BODY_SIZE`` env var (default 10 MB).  Only applied to
+    request methods that carry a body (POST, PUT, PATCH).
+
+    Raises HTTP 413 when the limit is exceeded.
+    """
+    if request.method.upper() not in _BODY_METHODS:
+        return
+
+    config: dict = getattr(api, "config", None) or {}
+    max_size: int = int(config.get("max_body_size", _GLOBAL_MAX_BODY_SIZE))
+
+    # Fast path: check Content-Length header without reading the body
+    content_length_header = request.headers.get("content-length")
+    if content_length_header:
+        try:
+            declared_size = int(content_length_header)
+            if declared_size > max_size:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail={
+                        "error": "request_body_too_large",
+                        "api_id": api.id,
+                        "max_bytes": max_size,
+                        "declared_bytes": declared_size,
+                    },
+                )
+        except ValueError:
+            pass  # Malformed Content-Length — let downstream handle it
+
+    # Slow path: read the body when Content-Length is absent
+    if not content_length_header:
+        body = await request.body()
+        if len(body) > max_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={
+                    "error": "request_body_too_large",
+                    "api_id": api.id,
+                    "max_bytes": max_size,
+                    "actual_bytes": len(body),
+                },
+            )
 
 
 # ---------------------------------------------------------------------------

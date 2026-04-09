@@ -10,8 +10,13 @@ from app.db import get_session
 from app.security.api_keys import APIKeyManager
 from app.logging.audit import AuditLogger
 from app.api.auth.dependencies import get_current_user
+from app.rate_limiter.dependencies import management_rate_limit
 
-router = APIRouter(prefix="/api/keys", tags=["API Keys"])
+router = APIRouter(
+    prefix="/api/keys",
+    tags=["API Keys"],
+    dependencies=[Depends(management_rate_limit)],
+)
 
 
 # Pydantic models
@@ -56,7 +61,7 @@ async def create_api_key(
 ):
     """Generate a new API key."""
     try:
-        api_key_manager = APIKeyManager(session)
+        api_key_manager = APIKeyManager(session, account_id=current_user.get("account_id"))
         audit_logger = AuditLogger(session)
 
         # Calculate expiration
@@ -114,7 +119,7 @@ async def list_api_keys(
 ):
     """List all API keys."""
     try:
-        api_key_manager = APIKeyManager(session)
+        api_key_manager = APIKeyManager(session, account_id=current_user.get("account_id"))
         keys = await api_key_manager.list_api_keys(environment_id=environment_id)
         return keys
     except Exception as e:
@@ -132,7 +137,7 @@ async def revoke_api_key(
 ):
     """Revoke an API key."""
     try:
-        api_key_manager = APIKeyManager(session)
+        api_key_manager = APIKeyManager(session, account_id=current_user.get("account_id"))
         audit_logger = AuditLogger(session)
 
         success = await api_key_manager.revoke_api_key(key_id)
@@ -171,7 +176,7 @@ async def delete_api_key(
 ):
     """Delete an API key."""
     try:
-        api_key_manager = APIKeyManager(session)
+        api_key_manager = APIKeyManager(session, account_id=current_user.get("account_id"))
         audit_logger = AuditLogger(session)
 
         success = await api_key_manager.delete_api_key(key_id)
@@ -210,7 +215,7 @@ async def get_api_key_stats(
 ):
     """Get usage statistics for an API key."""
     try:
-        api_key_manager = APIKeyManager(session)
+        api_key_manager = APIKeyManager(session, account_id=current_user.get("account_id"))
         stats = await api_key_manager.get_key_stats(key_id)
 
         if not stats:

@@ -22,6 +22,7 @@ export default function ProtectedRoute() {
             email: userInfo.email,
             is_active: userInfo.is_active,
             is_superuser: userInfo.is_superuser,
+            account_id: userInfo.account_id ?? null,
             roles: userInfo.roles || [],
             permissions: userInfo.permissions || [],
           });

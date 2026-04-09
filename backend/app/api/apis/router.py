@@ -13,9 +13,14 @@ from .schema_router import router as schema_router
 from .lb_router import router as lb_router
 from app.authorizers.rbac import require_permission
 from app.db.models import User
+from app.rate_limiter.dependencies import management_rate_limit
 
 
-router = APIRouter(prefix="/apis", tags=["apis"])
+router = APIRouter(
+    prefix="/apis",
+    tags=["apis"],
+    dependencies=[Depends(management_rate_limit)],
+)
 
 # Mount deployment sub-routes: /apis/{id}/deployments, /apis/{id}/status
 router.include_router(deployment_router)
@@ -35,8 +40,9 @@ async def create_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("api:create")),
 ):
+    account_id = getattr(current_user, "account_id", None)
     try:
-        api = await crud.create_api(db, payload.model_dump())
+        api = await crud.create_api(db, payload.model_dump(), account_id=account_id)
         return api
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -47,7 +53,8 @@ async def list_apis(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("api:list")),
 ):
-    return await crud.list_apis(db)
+    account_id = getattr(current_user, "account_id", None)
+    return await crud.list_apis(db, account_id=account_id)
 
 
 @router.get("/{api_id}", response_model=schemas.APIMeta)
@@ -56,7 +63,8 @@ async def get_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("api:read")),
 ):
-    api = await crud.get_api(db, api_id)
+    account_id = getattr(current_user, "account_id", None)
+    api = await crud.get_api(db, api_id, account_id=account_id)
     if not api:
         raise HTTPException(status_code=404, detail="API not found")
     return api
@@ -69,7 +77,8 @@ async def update_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("api:update")),
 ):
-    api = await crud.get_api(db, api_id)
+    account_id = getattr(current_user, "account_id", None)
+    api = await crud.get_api(db, api_id, account_id=account_id)
     if not api:
         raise HTTPException(status_code=404, detail="API not found")
     patch = payload.model_dump(exclude_none=True)
@@ -83,7 +92,8 @@ async def delete_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("api:delete")),
 ):
-    api = await crud.get_api(db, api_id)
+    account_id = getattr(current_user, "account_id", None)
+    api = await crud.get_api(db, api_id, account_id=account_id)
     if not api:
         raise HTTPException(status_code=404, detail="API not found")
     await crud.delete_api(db, api)

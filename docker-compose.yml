@@ -18,6 +18,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - flowgate_net
 
   # ── Redis ─────────────────────────────────────────────────────────────────
   redis:
@@ -30,6 +32,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - flowgate_net
 
   # ── Backend (FastAPI) ─────────────────────────────────────────────────────
   backend:
@@ -50,16 +54,22 @@ services:
       ENCRYPTION_SALT: gateway-salt
       FIRST_SUPERUSER_EMAIL: admin@example.com
       FIRST_SUPERUSER_PASSWORD: changeme123
+      GATEWAY_IMAGE: flowgate-gateway-runtime:latest
+      GATEWAY_DOCKER_NETWORK: flowgate_net
+      CONTROL_PLANE_URL: http://backend:8000
     ports:
       - "8000:8000"
     volumes:
       - ./backend/config:/app/config   # hot-reload policy JSON
       - ./backend/data:/app/data       # control-plane state persistence
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker SDK for instance provisioning
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - flowgate_net
 
   # ── Frontend (Vite / React) ───────────────────────────────────────────────
   frontend:
@@ -72,6 +82,36 @@ services:
         condition: service_healthy
     ports:
       - "5173:80"
+    networks:
+      - flowgate_net
+
+  # ── Gateway Runtime (per-account; build-only — NOT started by compose up) ─
+  # Spawned dynamically by the backend via Docker SDK (instance_manager.py).
+  # Build with:  docker compose build gateway-runtime
+  # The image tag must match GATEWAY_IMAGE in the backend environment above.
+  gateway-runtime:
+    build:
+      context: ./gateway-runtime
+      dockerfile: Dockerfile
+    image: flowgate-gateway-runtime:latest
+    profiles:
+      - build   # excluded from `docker compose up` — build-only target
+    environment:
+      ACCOUNT_ID: "0"
+      GATEWAY_PORT: "5000"
+      REDIS_URL: redis://redis:6379/0
+      CONTROL_PLANE_URL: http://backend:8000
+      ACCOUNT_SECRET: placeholder
+      SQLITE_PATH: /data/gateway.db
+    volumes:
+      - /data
+    networks:
+      - flowgate_net
 
 volumes:
   pg_data:
+
+networks:
+  flowgate_net:
+    name: flowgate_net
+    driver: bridge

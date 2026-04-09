@@ -14,6 +14,7 @@ export interface UserWithRoles {
   email: string;
   is_active: boolean;
   is_superuser: boolean;
+  account_id?: number | null;
   legacy_roles?: string;
   roles: string[];
   permissions: string[];

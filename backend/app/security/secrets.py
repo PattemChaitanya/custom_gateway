@@ -11,10 +11,22 @@ logger = get_logger("secrets")
 
 
 class SecretsManager:
-    """Manager for encrypted secrets storage."""
+    """Manager for encrypted secrets storage.
 
-    def __init__(self, session: AsyncSession):
+    ``account_id`` scopes all queries to a single tenant.  Pass ``None`` for
+    superuser access (no account filter applied).
+    """
+
+    def __init__(self, session: AsyncSession, account_id: Optional[int] = None):
         self.session = session
+        self.account_id = account_id
+
+    def _scope(self, stmt):
+        """Apply account_id filter to *stmt* when running in tenant context."""
+        if self.account_id is not None:
+            from app.db.models import Secret
+            stmt = stmt.where(Secret.account_id == self.account_id)
+        return stmt
 
     async def store_secret(
         self,
@@ -41,9 +53,9 @@ class SecretsManager:
         # Encrypt the value
         encrypted_value = encrypt_data(value)
 
-        # Check if secret already exists
+        # Check if secret already exists (scoped to this account)
         result = await self.session.execute(
-            select(Secret).where(Secret.name == name)
+            self._scope(select(Secret).where(Secret.name == name))
         )
         existing = result.scalar_one_or_none()
 
@@ -85,6 +97,7 @@ class SecretsManager:
                 value=encrypted_value,
                 description=description,
                 tags=tags,
+                account_id=self.account_id,
                 created_at=datetime.now(timezone.utc),
             )
 
@@ -120,7 +133,7 @@ class SecretsManager:
         from app.db.models import Secret
 
         result = await self.session.execute(
-            select(Secret).where(Secret.name == name)
+            self._scope(select(Secret).where(Secret.name == name))
         )
         secret = result.scalar_one_or_none()
 
@@ -158,11 +171,11 @@ class SecretsManager:
         from app.db.models import Secret
 
         query = select(Secret)
-
         if tags:
             query = query.where(Secret.tags.contains(tags))
+        query = self._scope(query).order_by(Secret.created_at.desc())
 
-        result = await self.session.execute(query.order_by(Secret.created_at.desc()))
+        result = await self.session.execute(query)
         secrets = result.scalars().all()
 
         # Create response objects with 'key' attribute for compatibility
@@ -183,7 +196,7 @@ class SecretsManager:
         from app.db.models import Secret
 
         result = await self.session.execute(
-            select(Secret).where(Secret.name == name)
+            self._scope(select(Secret).where(Secret.name == name))
         )
         secret = result.scalar_one_or_none()
 

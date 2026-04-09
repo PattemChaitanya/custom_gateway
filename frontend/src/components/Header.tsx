@@ -38,6 +38,7 @@ const NAV_LINKS = [
 export default function Header() {
   const profile = useAuthStore((s) => s.profile);
   const { isSuperuser } = usePermissions();
+  const accountId = profile?.account_id;
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -196,7 +197,9 @@ export default function Header() {
               >
                 Environments
               </MenuItem>
-              <MenuItem onClick={handleClose}>My account</MenuItem>
+              <MenuItem onClick={handleClose} component={Link} to="/account">
+                My account
+              </MenuItem>
               <MenuItem
                 onClick={async () => {
                   try {
@@ -240,16 +243,38 @@ export default function Header() {
               </ListItemButton>
             </ListItem>
           ))}
-          {isSuperuser && (
+          {accountId && (
             <ListItem disablePadding>
               <ListItemButton
                 component={Link}
-                to="/users"
+                to="/account"
                 onClick={() => setDrawerOpen(false)}
               >
-                <ListItemText primary="Users" />
+                <ListItemText primary="Account" />
               </ListItemButton>
             </ListItem>
+          )}
+          {isSuperuser && (
+            <>
+              <ListItem disablePadding>
+                <ListItemButton
+                  component={Link}
+                  to="/users"
+                  onClick={() => setDrawerOpen(false)}
+                >
+                  <ListItemText primary="Users" />
+                </ListItemButton>
+              </ListItem>
+              <ListItem disablePadding>
+                <ListItemButton
+                  component={Link}
+                  to="/accounts"
+                  onClick={() => setDrawerOpen(false)}
+                >
+                  <ListItemText primary="Accounts" />
+                </ListItemButton>
+              </ListItem>
+            </>
           )}
         </List>
       </Drawer>

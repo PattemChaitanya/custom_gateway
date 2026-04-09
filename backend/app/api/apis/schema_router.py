@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authorizers.rbac import require_permission
+from ._helpers import get_api_or_404
 from app.db.connector import get_db
 from app.db.models import API, Schema
 from app.logging_config import get_logger
@@ -87,17 +88,6 @@ class SchemaOut(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get_api_or_404(api_id: int, db: AsyncSession) -> API:
-    result = await db.execute(select(API).where(API.id == api_id))
-    api = result.scalar_one_or_none()
-    if not api:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API {api_id} not found",
-        )
-    return api
-
-
 async def _get_schema_or_404(api_id: int, schema_id: int, db: AsyncSession) -> Schema:
     result = await db.execute(
         select(Schema).where(
@@ -128,7 +118,7 @@ async def create_schema(
     api_id: int,
     payload: SchemaCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> SchemaOut:
     """Create and attach a JSON Schema to an API for request body validation.
 
@@ -140,7 +130,7 @@ async def create_schema(
     Set ``definition`` to ``null`` to register a schema record without
     activating validation (useful as a placeholder).
     """
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
 
     schema = Schema(
         api_id=api_id,
@@ -163,10 +153,10 @@ async def create_schema(
 async def list_schemas(
     api_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> List[SchemaOut]:
     """Return all schemas attached to the given API, ordered by id."""
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     result = await db.execute(
         select(Schema).where(Schema.api_id == api_id).order_by(Schema.id)
     )
@@ -183,9 +173,10 @@ async def get_schema(
     api_id: int,
     schema_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> SchemaOut:
     """Retrieve a single schema by id."""
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     schema = await _get_schema_or_404(api_id, schema_id, db)
     return SchemaOut.from_orm_obj(schema)
 
@@ -200,12 +191,13 @@ async def update_schema(
     schema_id: int,
     payload: SchemaUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> SchemaOut:
     """Update a schema's name, JSON Schema definition, or raw text.
 
     Only fields present in the payload are updated (partial update).
     """
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     schema = await _get_schema_or_404(api_id, schema_id, db)
     if payload.name is not None:
         schema.name = payload.name
@@ -228,13 +220,14 @@ async def delete_schema(
     api_id: int,
     schema_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> None:
     """Permanently delete a schema from an API.
 
     If this was the only schema, the gateway will stop validating request
     bodies for the API.
     """
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     schema = await _get_schema_or_404(api_id, schema_id, db)
     await db.delete(schema)
     await db.commit()

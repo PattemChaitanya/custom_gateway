@@ -23,22 +23,33 @@ def _parse_datetime(value: Any) -> Optional[datetime.datetime]:
     return None
 
 
-async def create_api(db: AsyncSession | object, payload: Dict[str, Any]) -> models.API | object:
+async def create_api(
+    db: AsyncSession | object,
+    payload: Dict[str, Any],
+    account_id: Optional[int] = None,
+) -> models.API | object:
     """Create an API either in the SQL DB or in the in-memory fallback.
 
     The `db` argument can be an AsyncSession or an InMemoryDB instance. We
     detect the latter by the presence of an attribute `in_memory` on the
     object.
+
+    ``account_id`` is set on the new record and used to scope the duplicate
+    check.  Callers must pass the value from the authenticated user — it is
+    never read from ``payload`` so tenants cannot forge ownership.
     """
     # In-memory path
     if getattr(db, "in_memory", False):
         return await db.create_api(payload)
 
-    # SQLAlchemy path
-    # check for existing API with same name+version
-    existing = await db.execute(
-        select(models.API).where(models.API.name == payload.get("name"), models.API.version == payload.get("version"))
+    # SQLAlchemy path — check for existing API with same name+version within account
+    dup_stmt = select(models.API).where(
+        models.API.name == payload.get("name"),
+        models.API.version == payload.get("version"),
     )
+    if account_id is not None:
+        dup_stmt = dup_stmt.where(models.API.account_id == account_id)
+    existing = await db.execute(dup_stmt)
     if existing.scalar_one_or_none() is not None:
         raise ValueError("API with same name and version already exists")
 
@@ -47,6 +58,7 @@ async def create_api(db: AsyncSession | object, payload: Dict[str, Any]) -> mode
         version=payload.get("version"),
         description=payload.get("description"),
         owner_id=payload.get("owner_id"),
+        account_id=account_id,  # enforced by caller, never from payload
         # accept created/updated timestamps from snake_case or camelCase or from config._meta.ui
         created_at=_parse_datetime(
             payload.get("created_at") or payload.get("createdAt") or (payload.get("config") or {}).get("_meta", {}).get("ui", {}).get("createdAt") or (payload.get("config") or {}).get("_meta", {}).get("ui", {}).get("created_at")
@@ -65,17 +77,30 @@ async def create_api(db: AsyncSession | object, payload: Dict[str, Any]) -> mode
     return api
 
 
-async def list_apis(db: AsyncSession | object) -> List[models.API] | List[object]:
+async def list_apis(
+    db: AsyncSession | object,
+    account_id: Optional[int] = None,
+) -> List[models.API] | List[object]:
     if getattr(db, "in_memory", False):
         return await db.list_apis()
-    result = await db.execute(select(models.API))
+    stmt = select(models.API)
+    if account_id is not None:
+        stmt = stmt.where(models.API.account_id == account_id)
+    result = await db.execute(stmt)
     return result.scalars().all()
 
 
-async def get_api(db: AsyncSession | object, api_id: int) -> Optional[models.API] | Optional[object]:
+async def get_api(
+    db: AsyncSession | object,
+    api_id: int,
+    account_id: Optional[int] = None,
+) -> Optional[models.API] | Optional[object]:
     if getattr(db, "in_memory", False):
         return await db.get_api(api_id)
-    result = await db.execute(select(models.API).where(models.API.id == api_id))
+    stmt = select(models.API).where(models.API.id == api_id)
+    if account_id is not None:
+        stmt = stmt.where(models.API.account_id == account_id)
+    result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
 

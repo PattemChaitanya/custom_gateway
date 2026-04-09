@@ -54,6 +54,7 @@ from app.authorizers.rbac import require_permission
 from app.db.connector import get_db
 from app.db.models import API, AuthPolicy
 from app.logging_config import get_logger
+from ._helpers import get_api_or_404
 
 logger = get_logger("gateway.auth_policy_router")
 
@@ -112,17 +113,6 @@ class AuthPolicyOut(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get_api_or_404(api_id: int, db: AsyncSession) -> API:
-    result = await db.execute(select(API).where(API.id == api_id))
-    api = result.scalar_one_or_none()
-    if not api:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API {api_id} not found",
-        )
-    return api
-
-
 async def _get_policy_or_404(api_id: int, policy_id: int, db: AsyncSession) -> AuthPolicy:
     result = await db.execute(
         select(AuthPolicy).where(
@@ -153,7 +143,7 @@ async def create_auth_policy(
     api_id: int,
     payload: AuthPolicyCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> AuthPolicyOut:
     """Create and attach an authentication policy to an API.
 
@@ -162,7 +152,7 @@ async def create_auth_policy(
 
     Supported types: ``none``, ``open``, ``apiKey``, ``jwt``/``bearer``, ``oauth2``.
     """
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     policy = AuthPolicy(
         api_id=api_id,
         name=payload.name,
@@ -185,9 +175,9 @@ async def create_auth_policy(
 async def list_auth_policies(
     api_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> List[AuthPolicyOut]:
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     result = await db.execute(
         select(AuthPolicy)
         .where(AuthPolicy.api_id == api_id)
@@ -206,8 +196,9 @@ async def get_auth_policy(
     api_id: int,
     policy_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> AuthPolicyOut:
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     policy = await _get_policy_or_404(api_id, policy_id, db)
     return AuthPolicyOut.from_orm_obj(policy)
 
@@ -222,8 +213,9 @@ async def update_auth_policy(
     policy_id: int,
     payload: AuthPolicyUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> AuthPolicyOut:
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     policy = await _get_policy_or_404(api_id, policy_id, db)
     if payload.name is not None:
         policy.name = payload.name
@@ -246,8 +238,9 @@ async def delete_auth_policy(
     api_id: int,
     policy_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> None:
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     policy = await _get_policy_or_404(api_id, policy_id, db)
     await db.delete(policy)
     await db.commit()

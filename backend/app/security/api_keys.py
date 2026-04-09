@@ -83,10 +83,23 @@ def verify_api_key(api_key: str, stored_hash: str) -> bool:
 
 
 class APIKeyManager:
-    """Manager for API key operations."""
+    """Manager for API key operations.
 
-    def __init__(self, session: AsyncSession):
+    ``account_id`` scopes all tenant-facing queries to a single account.
+    Pass ``None`` for superuser/system access (no account filter applied).
+    ``verify_and_get_key`` is intentionally NOT scoped — key validation must
+    work before account context is known.
+    """
+
+    def __init__(self, session: AsyncSession, account_id: Optional[int] = None):
         self.session = session
+        self.account_id = account_id
+
+    def _scope(self, stmt):
+        """Apply account_id filter when running in tenant context."""
+        if self.account_id is not None:
+            stmt = stmt.where(APIKey.account_id == self.account_id)
+        return stmt
 
     async def create_api_key(
         self,
@@ -118,6 +131,7 @@ class APIKeyManager:
             label=label or "Unnamed Key",
             scopes=scopes or "",
             environment_id=environment_id,
+            account_id=self.account_id,
             revoked=False,
             created_at=datetime.now(timezone.utc),
         )
@@ -225,11 +239,9 @@ class APIKeyManager:
 
     async def list_keys(self, environment_id: Optional[int] = None) -> list:
         """List all API keys (without showing the actual keys)."""
-        query = select(APIKey)
-
+        query = self._scope(select(APIKey))
         if environment_id:
             query = query.where(APIKey.environment_id == environment_id)
-
         result = await self.session.execute(query.order_by(APIKey.created_at.desc()))
         keys = result.scalars().all()
 
@@ -251,11 +263,10 @@ class APIKeyManager:
 
     async def revoke_key(self, key_id: int) -> bool:
         """Revoke an API key."""
-        result = await self.session.execute(
-            update(APIKey)
-            .where(APIKey.id == key_id)
-            .values(revoked=True)
-        )
+        stmt = update(APIKey).where(APIKey.id == key_id).values(revoked=True)
+        if self.account_id is not None:
+            stmt = stmt.where(APIKey.account_id == self.account_id)
+        result = await self.session.execute(stmt)
         await self.session.commit()
 
         if result.rowcount > 0:
@@ -270,7 +281,7 @@ class APIKeyManager:
     async def delete_key(self, key_id: int) -> bool:
         """Delete an API key permanently."""
         result = await self.session.execute(
-            select(APIKey).where(APIKey.id == key_id)
+            self._scope(select(APIKey).where(APIKey.id == key_id))
         )
         key = result.scalar_one_or_none()
 
@@ -287,10 +298,9 @@ class APIKeyManager:
 
     async def list_api_keys(self, environment_id: Optional[int] = None) -> list:
         """List all API keys."""
-        query = select(APIKey)
+        query = self._scope(select(APIKey))
         if environment_id:
             query = query.where(APIKey.environment_id == environment_id)
-
         result = await self.session.execute(query)
         keys = result.scalars().all()
 
@@ -304,7 +314,7 @@ class APIKeyManager:
     async def get_key_stats(self, key_id: int) -> Optional[Dict[str, Any]]:
         """Get usage statistics for an API key."""
         result = await self.session.execute(
-            select(APIKey).where(APIKey.id == key_id)
+            self._scope(select(APIKey).where(APIKey.id == key_id))
         )
         key = result.scalar_one_or_none()
 

@@ -111,6 +111,7 @@ async def get_me(
             "email": user.email,
             "is_active": user.is_active,
             "is_superuser": user.is_superuser,
+            "account_id": user.account_id,
             "legacy_roles": user.roles,
             "roles": [r.name for r in roles],
             "permissions": list(permissions),

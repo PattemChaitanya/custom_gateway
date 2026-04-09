@@ -1,6 +1,12 @@
-import { useEffect, useState } from "react";
-import { getMetricsSummary } from "../services/metrics";
-import type { MetricsSummary } from "../services/metrics";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getMetricsSummary, getRequestLogsSummary } from "../services/metrics";
+import type { MetricsSummary, RequestLogsSummary } from "../services/metrics";
+import {
+  getAccountUsage,
+  getAccountInstance,
+  type AccountUsage,
+  type GatewayInstance,
+} from "../services/accounts";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../hooks/useAuth";
 import {
@@ -10,9 +16,13 @@ import {
   Grid,
   Card,
   CardContent,
+  Chip,
   Divider,
+  IconButton,
   LinearProgress,
+  Tooltip,
 } from "@mui/material";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import PageWrapper from "../components/PageWrapper";
 
 function StatCard({
@@ -122,11 +132,221 @@ function StatusBar({
   );
 }
 
+const PLAN_COLORS: Record<string, "default" | "primary" | "secondary"> = {
+  free: "default",
+  pro: "primary",
+  enterprise: "secondary",
+};
+
+// ── Instance status colours ───────────────────────────────────────────────────
+const INSTANCE_STATUS_COLOR: Record<
+  GatewayInstance["status"],
+  "default" | "success" | "warning" | "error" | "info"
+> = {
+  running: "success",
+  provisioning: "info",
+  stopped: "default",
+  expired: "error",
+  error: "error",
+};
+
+function formatCountdown(seconds: number): string {
+  if (seconds <= 0) return "Expired";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m remaining`;
+  if (m > 0) return `${m}m ${s}s remaining`;
+  return `${s}s remaining`;
+}
+
+function InstancePanel({ accountId }: { accountId: number }) {
+  const [instance, setInstance] = useState<GatewayInstance | null>(null);
+  const [countdown, setCountdown] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchInstance = useCallback(() => {
+    getAccountInstance(accountId)
+      .then((data) => {
+        setInstance(data);
+        setCountdown(Math.max(0, data.expires_in_seconds));
+      })
+      .catch(() => setInstance(null));
+  }, [accountId]);
+
+  // Poll instance status every 10s
+  useEffect(() => {
+    fetchInstance();
+    const poll = setInterval(fetchInstance, 10_000);
+    return () => clearInterval(poll);
+  }, [fetchInstance]);
+
+  // Live countdown tick every second
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (!instance || instance.status !== "running") return;
+    timerRef.current = setInterval(() => {
+      setCountdown((c) => Math.max(0, c - 1));
+    }, 1000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [instance?.status]);
+
+  const handleCopy = () => {
+    if (!instance) return;
+    navigator.clipboard.writeText(instance.gateway_url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  if (!instance) return null;
+
+  return (
+    <Card variant="outlined" sx={{ mb: 3 }}>
+      <CardContent>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
+          <Typography variant="subtitle2">Gateway Instance</Typography>
+          <Chip
+            label={instance.status}
+            size="small"
+            color={INSTANCE_STATUS_COLOR[instance.status]}
+          />
+        </Box>
+
+        {/* Gateway URL */}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 1 }}>
+          <Typography
+            variant="body2"
+            sx={{ fontFamily: "monospace", wordBreak: "break-all" }}
+          >
+            {instance.gateway_url}
+          </Typography>
+          <Tooltip title={copied ? "Copied!" : "Copy URL"}>
+            <IconButton size="small" onClick={handleCopy}>
+              <ContentCopyIcon fontSize="inherit" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+
+        {/* Countdown */}
+        <Typography
+          variant="caption"
+          color={countdown < 3600 ? "error" : "text.secondary"}
+        >
+          {formatCountdown(countdown)}
+        </Typography>
+
+        {/* Expiry progress bar */}
+        {instance.status === "running" && (
+          <LinearProgress
+            variant="determinate"
+            value={Math.max(
+              0,
+              100 - (countdown / (48 * 3600)) * 100,
+            )}
+            color={countdown < 3600 ? "error" : countdown < 7200 ? "warning" : "primary"}
+            sx={{ mt: 1, borderRadius: 1, height: 4 }}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Live metrics strip (polls every 10s) ─────────────────────────────────────
+
+function LiveMetricsStrip({ accountId }: { accountId?: number }) {
+  const [live, setLive] = useState<RequestLogsSummary | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const fetchLive = useCallback(() => {
+    getRequestLogsSummary(1) // last 1 hour
+      .then((data) => {
+        setLive(data);
+        setLastUpdated(new Date());
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchLive();
+    const poll = setInterval(fetchLive, 10_000);
+    return () => clearInterval(poll);
+  }, [fetchLive, accountId]);
+
+  // req/min = total requests in last 60 min / 60
+  const reqPerMin = live ? (live.total_requests / 60).toFixed(1) : "—";
+  const errorRate = live ? `${live.error_rate}%` : "—";
+  const avgLatency = live ? `${live.avg_latency_ms} ms` : "—";
+
+  return (
+    <Card variant="outlined" sx={{ mb: 3 }}>
+      <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
+          <Typography variant="subtitle2">Live Traffic</Typography>
+          <Chip label="1h window" size="small" variant="outlined" />
+          {lastUpdated && (
+            <Typography variant="caption" color="text.secondary" sx={{ ml: "auto" }}>
+              Updated {lastUpdated.toLocaleTimeString()}
+            </Typography>
+          )}
+        </Box>
+        <Grid container spacing={2}>
+          <Grid item xs={4}>
+            <Typography variant="caption" color="text.secondary">
+              Req / min
+            </Typography>
+            <Typography variant="h6" fontWeight={700}>
+              {reqPerMin}
+            </Typography>
+          </Grid>
+          <Grid item xs={4}>
+            <Typography variant="caption" color="text.secondary">
+              Error rate
+            </Typography>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              color={
+                live && live.error_rate > 5 ? "error.main" : "success.main"
+              }
+            >
+              {errorRate}
+            </Typography>
+          </Grid>
+          <Grid item xs={4}>
+            <Typography variant="caption" color="text.secondary">
+              Avg latency
+            </Typography>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              color={
+                live && live.avg_latency_ms > 500
+                  ? "error.main"
+                  : live && live.avg_latency_ms > 200
+                  ? "warning.main"
+                  : "success.main"
+              }
+            >
+              {avgLatency}
+            </Typography>
+          </Grid>
+        </Grid>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const profile = useAuthStore((s) => s.profile);
   const navigate = useNavigate();
   const [summary, setSummary] = useState<MetricsSummary | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
+  const [usage, setUsage] = useState<AccountUsage | null>(null);
 
   useEffect(() => {
     getMetricsSummary()
@@ -134,6 +354,14 @@ export default function Dashboard() {
       .catch(() => setSummary(null))
       .finally(() => setLoadingMetrics(false));
   }, []);
+
+  useEffect(() => {
+    if (profile?.account_id) {
+      getAccountUsage(profile.account_id)
+        .then(setUsage)
+        .catch(() => setUsage(null));
+    }
+  }, [profile?.account_id]);
 
   return (
     <PageWrapper maxWidth="lg">
@@ -163,6 +391,70 @@ export default function Dashboard() {
           Secrets
         </Button>
       </Box>
+
+      {/* Gateway instance status + countdown */}
+      {profile?.account_id && (
+        <InstancePanel accountId={profile.account_id} />
+      )}
+
+      {/* Live metrics — req/min, error rate, avg latency — auto-polls 10s */}
+      <LiveMetricsStrip accountId={profile?.account_id} />
+
+      {/* Account quota card */}
+      {usage && (
+        <Card variant="outlined" sx={{ mb: 3 }}>
+          <CardContent>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
+              <Typography variant="subtitle2">Account Quota</Typography>
+              <Chip
+                label={usage.plan}
+                size="small"
+                color={PLAN_COLORS[usage.plan] ?? "default"}
+              />
+              <Typography variant="caption" color="text.secondary">
+                {usage.slug}
+              </Typography>
+            </Box>
+            <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.5 }}>
+              <Typography variant="body2">
+                {usage.used_today.toLocaleString()} requests today
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {usage.daily_quota
+                  ? `${usage.daily_quota.toLocaleString()} / day`
+                  : "Unlimited"}
+              </Typography>
+            </Box>
+            {usage.daily_quota ? (
+              <Tooltip
+                title={`${usage.remaining?.toLocaleString() ?? 0} remaining`}
+              >
+                <LinearProgress
+                  variant="determinate"
+                  value={Math.min(
+                    100,
+                    (usage.used_today / usage.daily_quota) * 100,
+                  )}
+                  color={
+                    usage.used_today / usage.daily_quota >= 0.9
+                      ? "error"
+                      : usage.used_today / usage.daily_quota >= 0.7
+                        ? "warning"
+                        : "primary"
+                  }
+                  sx={{ borderRadius: 1, height: 6 }}
+                />
+              </Tooltip>
+            ) : (
+              <LinearProgress
+                variant="determinate"
+                value={0}
+                sx={{ borderRadius: 1, height: 6 }}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Divider sx={{ mb: 3 }} />
 

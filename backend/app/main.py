@@ -27,7 +27,15 @@ from app.api.authorizers import router as authorizers_router
 from app.api.admin import router as admin_router
 from app.api.audit_logs import router as audit_logs_router
 from app.api.mini_cloud import router as mini_cloud_router
+from app.api.accounts import router as accounts_router
+from app.api.internal import router as internal_router
+from app.api.instances import router as instances_router
+from app.api.gateway_routes import router as gateway_routes_router
+from app.api.request_logs import router as request_logs_router
+from app.gateway.expiry_scheduler import start_expiry_scheduler, stop_expiry_scheduler
+from app.storage.tiered_store import get_store
 import asyncio
+import os
 from app.metrics.prometheus import metrics_endpoint
 from .logging_config import configure_logging, get_logger
 
@@ -85,13 +93,24 @@ async def lifespan(app: FastAPI):
     # Initialize database manager
     db_manager = get_db_manager()
     control_loop_stop_event = asyncio.Event()
+    audit_retention_stop_event = asyncio.Event()
     control_loop_task = None
+    audit_retention_task = None
     health_checker = None
     hc_session = None
 
     try:
+        # Validate required secrets at startup — fail fast rather than silently
+        # using insecure defaults that could reach production.
+        _required_env = ["SECRET_KEY"]
+        _missing = [v for v in _required_env if not os.getenv(v)]
+        if _missing:
+            raise RuntimeError(
+                f"Missing required environment variables: {', '.join(_missing)}. "
+                "Set them in your .env file before starting the server."
+            )
+
         # Determine echo_sql from environment
-        import os
         echo_sql = os.getenv("SQL_ECHO", "False").lower() in (
             "1", "true", "yes")
 
@@ -128,7 +147,6 @@ async def lifespan(app: FastAPI):
 
         # Start periodic mini-cloud control loop.
         try:
-            import os
             interval = float(os.getenv("CONTROL_LOOP_INTERVAL_SECONDS", "5"))
             control_loop_task = asyncio.create_task(
                 run_control_loop(control_loop_stop_event,
@@ -139,6 +157,33 @@ async def lifespan(app: FastAPI):
         except Exception as ctrl_err:
             logger.warning(
                 f"Failed to start mini-cloud control loop: {ctrl_err}")
+
+        # Start audit log retention loop.
+        try:
+            from app.api.audit_logs import run_audit_log_retention_loop
+            audit_retention_task = asyncio.create_task(
+                run_audit_log_retention_loop(
+                    db_manager.get_db, audit_retention_stop_event
+                )
+            )
+            logger.info("Audit log retention loop started")
+        except Exception as retention_err:
+            logger.warning(f"Failed to start audit log retention loop: {retention_err}")
+
+        # Start instance expiry scheduler.
+        try:
+            start_expiry_scheduler(db_manager.get_db)
+        except Exception as sched_err:
+            logger.warning(f"Failed to start instance expiry scheduler: {sched_err}")
+
+        # Open tiered storage and start L2→L3 sync job.
+        try:
+            store = get_store()
+            await store.open()
+            store.start_sync_job()
+            logger.info("TieredStore opened and sync job started")
+        except Exception as store_err:
+            logger.warning(f"TieredStore init failed (non-fatal): {store_err}")
 
         # Start periodic backend health checks (PostgreSQL mode only).
         try:
@@ -168,10 +213,19 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown
     logger.info("Shutting down application")
     try:
+        await get_store().close()
+        stop_expiry_scheduler()
         if health_checker:
             await health_checker.stop_health_checks()
         if hc_session:
             await hc_session.close()
+        audit_retention_stop_event.set()
+        if audit_retention_task:
+            audit_retention_task.cancel()
+            try:
+                await audit_retention_task
+            except asyncio.CancelledError:
+                pass
         control_loop_stop_event.set()
         if control_loop_task:
             control_loop_task.cancel()
@@ -232,6 +286,11 @@ app.include_router(authorizers_router)
 app.include_router(admin_router)
 app.include_router(audit_logs_router)
 app.include_router(mini_cloud_router)
+app.include_router(accounts_router)
+app.include_router(instances_router)
+app.include_router(gateway_routes_router)
+app.include_router(request_logs_router)
+app.include_router(internal_router)
 
 # Gateway proxy — data plane: /gw/{api_id}/{path}
 # Must be registered AFTER management routers so /apis, /api/keys, etc. are not shadowed.
@@ -292,6 +351,7 @@ async def health_check():
     Returns:
         dict: Health status including database connection information
     """
+    from app.gateway.proxy import get_circuit_status
     db_manager = get_db_manager()
     db_health = await db_manager.health_check()
     conn_info = db_manager.get_connection_info()
@@ -306,7 +366,8 @@ async def health_check():
             "message": db_health["message"],
             "using_primary": conn_info["is_using_primary"],
             "using_sqlite": conn_info["is_using_sqlite"],
-        }
+        },
+        "circuit_breakers": get_circuit_status(),
     }
 
 

@@ -1,10 +1,48 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, func, JSON, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Integer, String, Boolean, DateTime, ForeignKey, func, JSON, Text, UniqueConstraint, Enum as SAEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 
 # use SQLAlchemy 2.0 compatible declarative_base import
 Base = declarative_base()
+
+
+class Account(Base):
+    """Top-level tenant/account entity.
+
+    Every resource in the system (APIs, keys, secrets, environments, …) is
+    scoped to exactly one Account.  This mirrors the AWS-style model where
+    each customer account gets its own isolated API plane.
+
+    plan values: 'free' | 'pro' | 'enterprise'
+    status values: 'active' | 'suspended' | 'deleted'
+    slug must start with a lowercase letter — ensures it is always
+    distinguishable from a numeric api_id in the gateway URL path.
+    """
+    __tablename__ = "accounts"
+    __table_args__ = (
+        # Slug must start with a letter so /gw/{account_slug}/{api_id}/... is unambiguous
+        CheckConstraint("slug ~ '^[a-z][a-z0-9\\-]*$'", name="ck_accounts_slug_format"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    # URL-safe unique identifier, e.g. "acme-corp" — used in gateway routing
+    slug = Column(String(63), nullable=False, unique=True, index=True)
+    name = Column(String(255), nullable=False)
+    plan = Column(String(50), nullable=False, default="free")
+    status = Column(String(50), nullable=False, default="active", index=True)
+    # Optional metadata (contact email, billing info, etc.)
+    metadata_json = Column(JSON, name="metadata", nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    users = relationship("User", back_populates="account")
+    apis = relationship("API", back_populates="account")
+    api_keys = relationship("APIKey", back_populates="account")
+    secrets = relationship("Secret", back_populates="account")
+    environments = relationship("Environment", back_populates="account")
+    audit_logs = relationship("AuditLog", back_populates="account")
+    metrics = relationship("Metric", back_populates="account")
 
 
 class User(Base):
@@ -17,8 +55,13 @@ class User(Base):
     is_superuser = Column(Boolean, default=False, nullable=False)
     # optional comma-separated roles field for simple RBAC (e.g. 'admin,editor')
     roles = Column(String, default='', nullable=True)
+    # Account this user belongs to. NULL = superuser with cross-account access.
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    account = relationship("Account", back_populates="users")
 
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan")
@@ -53,10 +96,15 @@ class OTP(Base):
 
 class API(Base):
     __tablename__ = "apis"
-    __table_args__ = (UniqueConstraint(
-        'name', 'version', name='uq_api_name_version'),)
+    __table_args__ = (
+        # Name+version must be unique within an account (not globally)
+        UniqueConstraint('account_id', 'name', 'version', name='uq_api_account_name_version'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
+    # Account this API belongs to
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String, nullable=False, index=True)
     version = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -72,6 +120,7 @@ class API(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    account = relationship("Account", back_populates="apis")
     schemas = relationship("Schema", back_populates="api",
                            cascade="all, delete-orphan")
     auth_policies = relationship(
@@ -120,13 +169,24 @@ class AuthPolicy(Base):
 class RateLimit(Base):
     __tablename__ = "rate_limits"
 
+    __table_args__ = (
+        CheckConstraint(
+            "key_type IN ('global', 'per-ip', 'per-key')",
+            name="ck_rate_limits_key_type",
+        ),
+        CheckConstraint(
+            "algorithm IN ('fixed_window', 'sliding_window', 'token_bucket')",
+            name="ck_rate_limits_algorithm",
+        ),
+    )
+
     id = Column(Integer, primary_key=True, index=True)
     api_id = Column(Integer, ForeignKey(
         "apis.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
-    # per-key, per-ip, global
+    # per-key, per-ip, global — constrained by ck_rate_limits_key_type
     key_type = Column(String, nullable=False, default='global')
-    # fixed_window, sliding_window, token_bucket
+    # fixed_window, sliding_window, token_bucket — constrained by ck_rate_limits_algorithm
     algorithm = Column(String, nullable=False, default='fixed_window')
     limit = Column(Integer, nullable=False)
     window_seconds = Column(Integer, nullable=False)
@@ -153,19 +213,31 @@ class Connector(Base):
 
 class Environment(Base):
     __tablename__ = "environments"
+    __table_args__ = (
+        # slug must be unique within an account, not globally
+        UniqueConstraint("account_id", "slug", name="uq_environment_account_slug"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, unique=True, index=True)
-    slug = Column(String, nullable=False, unique=True, index=True)
+    # Account this environment belongs to. NULL = system-wide default environments.
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="CASCADE"), nullable=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    slug = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    account = relationship("Account", back_populates="environments")
 
 
 class APIKey(Base):
     __tablename__ = "api_keys"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Account this key belongs to — scopes which APIs it can access
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="CASCADE"), nullable=True, index=True)
     key = Column(String, nullable=False, unique=True, index=True)
     label = Column(String, nullable=True)
     scopes = Column(String, nullable=True)  # comma-separated scopes
@@ -178,6 +250,7 @@ class APIKey(Base):
     usage_count = Column(Integer, default=0)
     metadata_json = Column(JSON, name="metadata", nullable=True)
 
+    account = relationship("Account", back_populates="api_keys")
     environment = relationship("Environment")
 
 
@@ -195,14 +268,23 @@ class ModuleMetadata(Base):
 
 class Secret(Base):
     __tablename__ = "secrets"
+    __table_args__ = (
+        # Name must be unique within an account, not globally
+        UniqueConstraint("account_id", "name", name="uq_secret_account_name"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, unique=True, index=True)
+    # Account this secret belongs to. NULL = system/superuser secret.
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="CASCADE"), nullable=True, index=True)
+    name = Column(String, nullable=False, index=True)
     value = Column(Text, nullable=False)  # Encrypted value
     description = Column(Text, nullable=True)
     tags = Column(String, nullable=True)  # comma-separated tags
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    account = relationship("Account", back_populates="secrets")
 
     # Hybrid property for test compatibility - works both in Python and SQL
     @hybrid_property
@@ -230,6 +312,9 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Account this log entry belongs to for tenant-scoped audit queries
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     timestamp = Column(DateTime(timezone=True),
                        server_default=func.now(), index=True)
     user_id = Column(Integer, ForeignKey(
@@ -245,6 +330,7 @@ class AuditLog(Base):
     status = Column(String, nullable=True)  # success, failure
     error_message = Column(Text, nullable=True)
 
+    account = relationship("Account", back_populates="audit_logs")
     user = relationship("User")
 
 
@@ -252,6 +338,9 @@ class Metric(Base):
     __tablename__ = "metrics"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Account this metric belongs to for per-tenant usage metering
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     timestamp = Column(DateTime(timezone=True),
                        server_default=func.now(), index=True)
     # request, latency, error
@@ -266,6 +355,7 @@ class Metric(Base):
         "users.id", ondelete="SET NULL"), nullable=True)
     metadata_json = Column(JSON, name="metadata", nullable=True)
 
+    account = relationship("Account", back_populates="metrics")
     api = relationship("API")
     user = relationship("User")
 
@@ -370,6 +460,79 @@ class ModuleScript(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     module = relationship("ModuleMetadata")
+
+
+class Instance(Base):
+    """Per-account gateway runtime instance.
+
+    Tracks the Docker container spawned for each account's isolated gateway.
+    status values: 'provisioning' | 'running' | 'stopped' | 'expired' | 'error'
+    expires_at = created_at + 48h (enforced by the expiry scheduler).
+    """
+    __tablename__ = "instances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    container_id = Column(String, nullable=True)
+    port = Column(Integer, nullable=False)
+    status = Column(String(50), nullable=False, default="provisioning", index=True)
+    gateway_url = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    account = relationship("Account", backref="instance")
+
+
+class GatewayRoute(Base):
+    """Per-account gateway route — proxied by the Node.js runtime.
+
+    method values: GET | POST | PUT | PATCH | DELETE | ANY
+    validation_schema stores a JSON Schema dict (optional).
+    """
+    __tablename__ = "gateway_routes"
+    __table_args__ = (
+        CheckConstraint(
+            "method IN ('GET','POST','PUT','PATCH','DELETE','ANY')",
+            name="ck_gateway_routes_method",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    path = Column(String, nullable=False)
+    method = Column(String(10), nullable=False, default="ANY")
+    target_url = Column(String, nullable=False)
+    auth_required = Column(Boolean, nullable=False, default=False)
+    # Optional JSON Schema for request validation (path/query/body/headers)
+    validation_schema = Column(JSON, nullable=True)
+    active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    account = relationship("Account", backref="gateway_routes")
+
+
+class RequestLog(Base):
+    """Per-request log entry pushed from the gateway runtime in batches.
+
+    Partitioned by account_id at the PostgreSQL level (see migration 0011).
+    On SQLite/in-memory fallback the table is unpartitioned but otherwise identical.
+    """
+    __tablename__ = "request_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey(
+        "accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    # FK to gateway_routes.id — nullable because a route may be deleted later
+    route_id = Column(Integer, ForeignKey(
+        "gateway_routes.id", ondelete="SET NULL"), nullable=True, index=True)
+    method = Column(String(10), nullable=False)
+    path = Column(String, nullable=False)
+    status_code = Column(Integer, nullable=False, index=True)
+    latency_ms = Column(Integer, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
 
 
 class APIDeployment(Base):

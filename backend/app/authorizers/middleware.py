@@ -57,7 +57,9 @@ def register_authorization_middleware(app: FastAPI) -> None:
             try:
                 from jose import jwt as _jwt
                 import os
-                secret = os.getenv("SECRET_KEY", "changeme-secret-key")
+                secret = os.getenv("SECRET_KEY")
+                if not secret:
+                    raise ValueError("SECRET_KEY not configured")
                 payload = _jwt.decode(
                     token,
                     secret,

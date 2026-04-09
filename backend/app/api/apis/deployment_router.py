@@ -26,6 +26,7 @@ from .deployment_crud import (
     update_api_status,
 )
 from .deployment_schemas import APIStatusUpdate, DeploymentOut, DeployRequest
+from ._helpers import get_api_or_404
 
 logger = get_logger("gateway.deployment_router")
 
@@ -71,6 +72,8 @@ async def create_deployment(
     Re-deploying an already-deployed API to the same environment is idempotent
     and updates the override URL + notes.
     """
+    account_id = getattr(current_user, "account_id", None)
+    await get_api_or_404(db, api_id, account_id=account_id)
     deployed_by: Optional[int] = getattr(current_user, "id", None)
 
     try:
@@ -103,8 +106,9 @@ async def create_deployment(
 async def list_api_deployments(
     api_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> List[DeploymentOut]:
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     deps = await list_deployments(db, api_id)
     return [_serialize(d) for d in deps]
 
@@ -118,8 +122,9 @@ async def get_api_deployment(
     api_id: int,
     deployment_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> DeploymentOut:
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     dep = await get_deployment(db, api_id, deployment_id)
     if not dep:
         raise HTTPException(
@@ -138,7 +143,7 @@ async def delete_deployment(
     api_id: int,
     deployment_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> DeploymentOut:
     """Mark a deployment as ``inactive``.
 
@@ -146,6 +151,7 @@ async def delete_deployment(
     If it was the last active deployment, the API's lifecycle status reverts
     to ``draft``.
     """
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     dep = await undeploy_api(db, api_id, deployment_id)
     if not dep:
         raise HTTPException(
@@ -164,7 +170,7 @@ async def patch_api_status(
     api_id: int,
     payload: APIStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> dict:
     """Manually override the API lifecycle status.
 
@@ -173,6 +179,7 @@ async def patch_api_status(
     Deprecating an API does **not** remove deployments — the gateway will
     return ``410 Gone`` for requests to a deprecated API.
     """
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     api = await update_api_status(db, api_id, payload.status)
     if not api:
         raise HTTPException(

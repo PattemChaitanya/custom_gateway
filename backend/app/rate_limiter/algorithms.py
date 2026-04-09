@@ -1,5 +1,6 @@
 """Rate limiting algorithms."""
 
+import asyncio
 import time
 from typing import Optional
 import redis.asyncio as redis
@@ -11,41 +12,60 @@ logger = get_logger("rate_limiter")
 # Module-level singleton Redis client to avoid creating new connections per call
 _redis_client: Optional[redis.Redis] = None
 _redis_url_cached: Optional[str] = None
+# Python 3.10+ allows Lock creation without a running event loop, so we can
+# initialise at module level and avoid the race condition in lazy creation.
+_redis_lock: asyncio.Lock = asyncio.Lock()
 
 
-def get_redis_client() -> redis.Redis:
+async def get_redis_client() -> Optional[redis.Redis]:
     """Get a shared Redis client for rate limiting (singleton).
 
     Returns the same client instance across calls. A new client is only
     created when the REDIS_URL environment variable changes or on first call.
+    An asyncio Lock prevents duplicate client creation under concurrent init.
     """
     global _redis_client, _redis_url_cached
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    # Reuse existing client if the URL hasn't changed
+    # Fast path — no lock needed if the client is already initialised
     if _redis_client is not None and _redis_url_cached == redis_url:
         return _redis_client
 
-    try:
-        _redis_client = redis.from_url(
-            redis_url,
-            decode_responses=True,
-            max_connections=20,
-            socket_connect_timeout=0.5,
-            socket_timeout=0.5,
-        )
-        _redis_url_cached = redis_url
-        return _redis_client
-    except Exception as e:
-        logger.warning(f"Redis client unavailable for rate limiter: {e}")
-        return None
+    async with _redis_lock:
+        # Re-check inside the lock (another coroutine may have initialised it)
+        if _redis_client is not None and _redis_url_cached == redis_url:
+            return _redis_client
+
+        try:
+            _redis_client = redis.from_url(
+                redis_url,
+                decode_responses=True,
+                max_connections=20,
+                socket_connect_timeout=0.5,
+                socket_timeout=0.5,
+            )
+            _redis_url_cached = redis_url
+            return _redis_client
+        except Exception as e:
+            logger.warning(f"Redis client unavailable for rate limiter: {e}")
+            return None
 
 
-class FixedWindowRateLimiter:
-    """Fixed window rate limiting algorithm."""
+class _BaseRateLimiter:
+    """Shared Redis client management for all rate limiter implementations."""
 
     def __init__(self, redis_client: Optional[redis.Redis] = None):
-        self.redis = redis_client or get_redis_client()
+        # Pass an explicit client in tests; None defers to async get_redis_client()
+        self._explicit_client = redis_client
+        self.redis: Optional[redis.Redis] = redis_client
+
+    async def _ensure_client(self) -> None:
+        if self._explicit_client is None and self.redis is None:
+            self.redis = await get_redis_client()
+
+
+class FixedWindowRateLimiter(_BaseRateLimiter):
+    """Fixed window rate limiting algorithm."""
 
     async def is_allowed(
         self,
@@ -58,6 +78,7 @@ class FixedWindowRateLimiter:
         Returns:
             (allowed: bool, info: dict)
         """
+        await self._ensure_client()
         try:
             # If redis client is not available, fail-open with explanatory info
             if not self.redis:
@@ -101,11 +122,8 @@ class FixedWindowRateLimiter:
             }
 
 
-class SlidingWindowRateLimiter:
+class SlidingWindowRateLimiter(_BaseRateLimiter):
     """Sliding window log rate limiting algorithm."""
-
-    def __init__(self, redis_client: Optional[redis.Redis] = None):
-        self.redis = redis_client or get_redis_client()
 
     async def is_allowed(
         self,
@@ -114,8 +132,20 @@ class SlidingWindowRateLimiter:
         window_seconds: int
     ) -> tuple[bool, dict]:
         """Check if request is allowed under rate limit."""
+        await self._ensure_client()
         try:
             now = time.time()
+
+            # If redis client is not available, fail-open with explanatory info
+            if not self.redis:
+                return True, {
+                    "limit": limit,
+                    "remaining": limit,
+                    "reset": int(now + window_seconds),
+                    "error": "redis_unavailable",
+                    "algorithm": "sliding_window",
+                }
+
             redis_key = f"rate_limit:sliding:{key}"
 
             # Remove old entries
@@ -151,11 +181,8 @@ class SlidingWindowRateLimiter:
             }
 
 
-class TokenBucketRateLimiter:
+class TokenBucketRateLimiter(_BaseRateLimiter):
     """Token bucket rate limiting algorithm."""
-
-    def __init__(self, redis_client: Optional[redis.Redis] = None):
-        self.redis = redis_client or get_redis_client()
 
     async def is_allowed(
         self,
@@ -167,8 +194,20 @@ class TokenBucketRateLimiter:
 
         Token bucket refills at rate of limit/window_seconds tokens per second.
         """
+        await self._ensure_client()
         try:
             now = time.time()
+
+            # If redis client is not available, fail-open with explanatory info
+            if not self.redis:
+                return True, {
+                    "limit": limit,
+                    "remaining": limit,
+                    "reset": int(now),
+                    "error": "redis_unavailable",
+                    "algorithm": "token_bucket",
+                }
+
             redis_key = f"rate_limit:token:{key}"
 
             # Get current state

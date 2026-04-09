@@ -37,6 +37,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.authorizers.rbac import require_permission
+from ._helpers import get_api_or_404
 from app.db.connector import get_db
 from app.db.models import API, BackendPool
 from app.logging_config import get_logger
@@ -122,17 +123,6 @@ class BackendHealthPatch(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get_api_or_404(api_id: int, db: AsyncSession) -> API:
-    result = await db.execute(select(API).where(API.id == api_id))
-    api = result.scalar_one_or_none()
-    if not api:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API {api_id} not found",
-        )
-    return api
-
-
 async def _get_pool_or_404(api_id: int, pool_id: int, db: AsyncSession) -> BackendPool:
     result = await db.execute(
         select(BackendPool).where(
@@ -163,7 +153,7 @@ async def create_pool(
     api_id: int,
     payload: BackendPoolCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> BackendPoolOut:
     """Create a backend pool and attach it to an API.
 
@@ -171,7 +161,7 @@ async def create_pool(
     Once a pool is attached, the gateway uses it instead of the static
     ``config.target_url``.  Requests are routed to healthy backends only.
     """
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
 
     pool = BackendPool(
         api_id=api_id,
@@ -196,10 +186,10 @@ async def create_pool(
 async def list_pools(
     api_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> List[BackendPoolOut]:
     """Return all backend pools attached to the given API, ordered by id."""
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     result = await db.execute(
         select(BackendPool)
         .where(BackendPool.api_id == api_id)
@@ -218,9 +208,10 @@ async def get_pool(
     api_id: int,
     pool_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> BackendPoolOut:
     """Retrieve a single backend pool by id."""
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     pool = await _get_pool_or_404(api_id, pool_id, db)
     return BackendPoolOut.from_orm_obj(pool)
 
@@ -235,13 +226,14 @@ async def update_pool(
     pool_id: int,
     payload: BackendPoolUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> BackendPoolOut:
     """Update a pool's algorithm, backends list, or health check configuration.
 
     Only fields present in the payload are updated (partial update).
     Replacing ``backends`` atomically swaps the entire backends list.
     """
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     pool = await _get_pool_or_404(api_id, pool_id, db)
     if payload.name is not None:
         pool.name = payload.name
@@ -268,12 +260,13 @@ async def delete_pool(
     api_id: int,
     pool_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> None:
     """Permanently delete a backend pool.
 
     Once deleted the gateway falls back to the API's static ``config.target_url``.
     """
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     pool = await _get_pool_or_404(api_id, pool_id, db)
     await db.delete(pool)
     await db.commit()
@@ -291,7 +284,7 @@ async def patch_backend_health(
     url: str = Path(..., description="URL-encoded backend url"),
     payload: BackendHealthPatch = ...,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> BackendPoolOut:
     """Toggle the ``healthy`` flag on a single backend within a pool.
 
@@ -301,6 +294,7 @@ async def patch_backend_health(
     **url** must be URL-encoded in the path, e.g.:
     ``PATCH /apis/1/backend-pools/2/backends/http%3A%2F%2Fhost%3A8080/health``
     """
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     pool = await _get_pool_or_404(api_id, pool_id, db)
     decoded_url = unquote(url)
 

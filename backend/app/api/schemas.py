@@ -4,7 +4,7 @@ Compatibility shim for API schemas. The canonical API schemas now live in
 """
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
-from .apis.schemas import *  # noqa: F401,F403
+from .apis.schemas import APIMeta, CreateAPIRequest, UpdateAPIRequest
 
 
 

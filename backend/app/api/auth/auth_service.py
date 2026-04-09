@@ -342,7 +342,10 @@ async def login_user(email: str, password: str, session: AsyncSession):
     roles = ','.join(r.strip().lower()
                      for r in raw_roles.split(',') if r.strip())
     is_super = bool(getattr(user, 'is_superuser', False))
+    account_id = getattr(user, 'account_id', None)
     extra = {"roles": roles, "is_superuser": is_super, "user_id": user.id}
+    if account_id is not None:
+        extra["account_id"] = account_id
     access = _create_token(
         email, ACCESS_TOKEN_EXPIRE_SECONDS, extra_claims=extra)
     refresh = _create_token(
@@ -449,9 +452,12 @@ async def refresh_tokens(refresh_token: str, session: AsyncSession):
                          for r in roles.split(",") if r.strip())
         is_super = bool(payload.get("is_superuser", False))
         uid = payload.get("user_id")
+        acct_id = payload.get("account_id")
         extra = {"roles": roles, "is_superuser": is_super}
         if uid is not None:
             extra["user_id"] = uid
+        if acct_id is not None:
+            extra["account_id"] = acct_id
 
         # create new refresh token
         new_refresh = _create_token(
@@ -558,6 +564,7 @@ async def get_current_user(token: str, session: AsyncSession) -> Optional[dict]:
             "roles": roles,
             "is_superuser": bool(getattr(user, 'is_superuser', False)),
             "is_active": bool(getattr(user, 'is_active', True)),
+            "account_id": getattr(user, 'account_id', None),
         }
     except Exception:
         return None

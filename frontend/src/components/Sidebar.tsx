@@ -15,9 +15,13 @@ import StorageIcon from "@mui/icons-material/Storage";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import VerifiedUserIcon from "@mui/icons-material/VerifiedUser";
 import ListAltIcon from "@mui/icons-material/ListAlt";
+import BarChartIcon from "@mui/icons-material/BarChart";
 import CloudIcon from "@mui/icons-material/Cloud";
 import PeopleIcon from "@mui/icons-material/People";
+import BusinessIcon from "@mui/icons-material/Business";
+import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import usePermissions from "../hooks/usePermissions";
+import useAuthStore from "../hooks/useAuth";
 
 export const SIDEBAR_WIDTH = 220;
 
@@ -51,6 +55,11 @@ const NAV_ITEMS = [
     icon: <ListAltIcon fontSize="small" />,
   },
   {
+    label: "Metrics",
+    to: "/metrics",
+    icon: <BarChartIcon fontSize="small" />,
+  },
+  {
     label: "Mini-Cloud",
     to: "/mini-cloud",
     icon: <CloudIcon fontSize="small" />,
@@ -59,10 +68,12 @@ const NAV_ITEMS = [
 
 const ADMIN_ITEMS = [
   { label: "Users", to: "/users", icon: <PeopleIcon fontSize="small" /> },
+  { label: "Accounts", to: "/accounts", icon: <BusinessIcon fontSize="small" /> },
 ];
 
 export default function Sidebar() {
   const { isSuperuser } = usePermissions();
+  const accountId = useAuthStore((s) => s.profile?.account_id);
   const location = useLocation();
 
   const isActive = (to: string) =>
@@ -94,6 +105,29 @@ export default function Sidebar() {
           </ListItem>
         ))}
       </List>
+      {accountId && (
+        <>
+          <Divider />
+          <List dense disablePadding>
+            <ListItem disablePadding>
+              <ListItemButton
+                component={Link}
+                to="/account"
+                selected={isActive("/account")}
+                sx={{ py: 0.75, "&.Mui-selected": { bgcolor: "action.selected" } }}
+              >
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <ManageAccountsIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Account"
+                  primaryTypographyProps={{ fontSize: 14 }}
+                />
+              </ListItemButton>
+            </ListItem>
+          </List>
+        </>
+      )}
       {isSuperuser && (
         <>
           <Divider />

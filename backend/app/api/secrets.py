@@ -8,8 +8,13 @@ from pydantic import BaseModel, Field
 from app.db.connector import get_db
 from app.security.secrets import SecretsManager
 from app.authorizers.rbac import require_permission
+from app.rate_limiter.dependencies import management_rate_limit
 
-router = APIRouter(prefix="/api/secrets", tags=["Secrets"])
+router = APIRouter(
+    prefix="/api/secrets",
+    tags=["Secrets"],
+    dependencies=[Depends(management_rate_limit)],
+)
 
 
 # Helper function to safely convert datetime or string to ISO format
@@ -99,7 +104,7 @@ async def create_secret(
             detail="Either 'name' or 'key' must be provided",
         )
 
-    manager = SecretsManager(db)
+    manager = SecretsManager(db, account_id=getattr(current_user, "account_id", None))
 
     try:
         result = await manager.store_secret(
@@ -141,7 +146,7 @@ async def list_secrets(
     Returns secret metadata without decrypted values.
     Optionally filter by tags.
     """
-    manager = SecretsManager(db)
+    manager = SecretsManager(db, account_id=getattr(current_user, "account_id", None))
 
     try:
         secrets = await manager.list_secrets(tags=tags)
@@ -177,7 +182,7 @@ async def get_secret(
 
     Set decrypt=true to include the decrypted value in the response.
     """
-    manager = SecretsManager(db)
+    manager = SecretsManager(db, account_id=getattr(current_user, "account_id", None))
 
     result = await manager.get_secret(name, decrypt=decrypt)
 
@@ -210,7 +215,7 @@ async def update_secret(
     """
     Update a secret's value and/or description.
     """
-    manager = SecretsManager(db)
+    manager = SecretsManager(db, account_id=getattr(current_user, "account_id", None))
 
     # Verify the secret exists
     existing = await manager.get_secret(name, decrypt=False)
@@ -259,7 +264,7 @@ async def delete_secret(
     current_user=Depends(require_permission("secret:delete")),
 ):
     """Delete a secret permanently."""
-    manager = SecretsManager(db)
+    manager = SecretsManager(db, account_id=getattr(current_user, "account_id", None))
 
     success = await manager.delete_secret(name)
 
@@ -286,7 +291,7 @@ async def rotate_secret(
 
     Preserves existing description and tags while updating the encrypted value.
     """
-    manager = SecretsManager(db)
+    manager = SecretsManager(db, account_id=getattr(current_user, "account_id", None))
 
     # Verify the secret exists and get current metadata
     existing = await manager.get_secret(name, decrypt=False)

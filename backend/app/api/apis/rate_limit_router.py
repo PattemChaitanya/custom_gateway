@@ -18,6 +18,7 @@ from app.authorizers.rbac import require_permission
 from app.db.connector import get_db
 from app.logging_config import get_logger
 from app.rate_limiter.manager import RateLimitManager
+from ._helpers import get_api_or_404
 
 logger = get_logger("gateway.rate_limit_router")
 
@@ -84,19 +85,6 @@ class RateLimitOut(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get_api_or_404(api_id: int, db: AsyncSession):
-    from sqlalchemy import select
-    from app.db.models import API
-    result = await db.execute(select(API).where(API.id == api_id))
-    api = result.scalar_one_or_none()
-    if not api:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API {api_id} not found",
-        )
-    return api
-
-
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -111,7 +99,7 @@ async def create_rate_limit(
     api_id: int,
     payload: RateLimitCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> RateLimitOut:
     """Attach a rate-limit policy to an API.
 
@@ -119,7 +107,7 @@ async def create_rate_limit(
     **first** matching rule (ordered by insertion order, i.e. lowest id).
     Typical setup: one global rule + an optional per-ip burst rule.
     """
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     mgr = RateLimitManager(db)
     rl = await mgr.create_rate_limit(
         api_id=api_id,
@@ -145,9 +133,9 @@ async def create_rate_limit(
 async def list_rate_limits(
     api_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> List[RateLimitOut]:
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     mgr = RateLimitManager(db)
     rls = await mgr.get_rate_limits_for_api(api_id)
     return [RateLimitOut.from_orm_obj(rl) for rl in rls]
@@ -162,9 +150,9 @@ async def get_rate_limit(
     api_id: int,
     rl_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:read")),
+    current_user=Depends(require_permission("api:read")),
 ) -> RateLimitOut:
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     mgr = RateLimitManager(db)
     rl = await mgr.get_rate_limit(rl_id)
     if not rl or rl.api_id != api_id:
@@ -185,9 +173,9 @@ async def update_rate_limit(
     rl_id: int,
     payload: RateLimitUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> RateLimitOut:
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     mgr = RateLimitManager(db)
     rl = await mgr.get_rate_limit(rl_id)
     if not rl or rl.api_id != api_id:
@@ -222,9 +210,9 @@ async def delete_rate_limit(
     api_id: int,
     rl_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permission("api:update")),
+    current_user=Depends(require_permission("api:update")),
 ) -> None:
-    await _get_api_or_404(api_id, db)
+    await get_api_or_404(db, api_id, account_id=getattr(current_user, "account_id", None))
     mgr = RateLimitManager(db)
     rl = await mgr.get_rate_limit(rl_id)
     if not rl or rl.api_id != api_id:

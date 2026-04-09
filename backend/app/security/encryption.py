@@ -21,10 +21,14 @@ def get_encryption_key_from_env() -> bytes:
     key_str = os.getenv("ENCRYPTION_KEY")
     
     if not key_str:
-        logger.warning("ENCRYPTION_KEY not set in environment. Using derived key from SECRET_KEY.")
-        # Derive key from SECRET_KEY if available
-        secret_key = os.getenv("SECRET_KEY", "default-secret-change-in-production")
-        salt = os.getenv("ENCRYPTION_SALT", "default-salt").encode()
+        logger.warning("ENCRYPTION_KEY not set in environment. Deriving key from SECRET_KEY.")
+        secret_key = os.getenv("SECRET_KEY")
+        if not secret_key:
+            raise RuntimeError(
+                "Neither ENCRYPTION_KEY nor SECRET_KEY is set. "
+                "At least one must be configured before the server starts."
+            )
+        salt = os.getenv("ENCRYPTION_SALT", "gateway-encryption-salt").encode()
         
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),

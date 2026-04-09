@@ -7,28 +7,26 @@ on:
     branches: [ feat/user, main, master ]
 
 jobs:
-  test:
+  # ── SQLite fast smoke tests (no service containers) ───────────────────────
+  test-sqlite:
+    name: Tests (SQLite) — Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.11, 3.12]
+        python-version: ["3.11", "3.12"]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cache pip
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          restore-keys: ${{ runner.os }}-pip-
 
       - name: Install dependencies
         working-directory: backend
@@ -42,23 +40,77 @@ jobs:
           python -m pip install ruff
           ruff check .
 
-      - name: Check required secrets
-        working-directory: backend
-        env:
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          REFRESH_TOKEN_SALT: ${{ secrets.REFRESH_TOKEN_SALT }}
-        run: |
-          if [ -z "$JWT_SECRET" ]; then echo "Missing required secret: JWT_SECRET"; exit 1; fi
-          if [ -z "$REFRESH_TOKEN_SALT" ]; then echo "Missing required secret: REFRESH_TOKEN_SALT"; exit 1; fi
-
-      - name: Run migrations
+      - name: Run migrations (SQLite)
         working-directory: backend
         env:
           DATABASE_URL: sqlite+aiosqlite:///./test_dev.db
-        run: |
-          python -m alembic -c alembic.ini upgrade head
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          JWT_SECRET: ci-test-jwt-secret
+          REFRESH_TOKEN_SALT: ${{ secrets.REFRESH_TOKEN_SALT || 'ci-test-salt' }}
+        run: python -m alembic -c alembic.ini upgrade head
 
-      - name: Run tests
+      - name: Run tests (SQLite)
+        working-directory: backend
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./test_dev.db
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          JWT_SECRET: ci-test-jwt-secret
+          REFRESH_TOKEN_SALT: ${{ secrets.REFRESH_TOKEN_SALT || 'ci-test-salt' }}
+        run: pytest -q
+
+  # ── PostgreSQL integration tests ───────────────────────────────────────────
+  test-postgres:
+    name: Tests (PostgreSQL) — Python 3.12
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gateway_test
+          POSTGRES_PASSWORD: gateway_test
+          POSTGRES_DB: gateway_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gateway_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
         working-directory: backend
         run: |
-          pytest -q
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run migrations (PostgreSQL)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://gateway_test:gateway_test@localhost:5432/gateway_test
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          JWT_SECRET: ci-test-jwt-secret
+          REFRESH_TOKEN_SALT: ${{ secrets.REFRESH_TOKEN_SALT || 'ci-test-salt' }}
+        run: python -m alembic -c alembic.ini upgrade head
+
+      - name: Run tests (PostgreSQL)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://gateway_test:gateway_test@localhost:5432/gateway_test
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          JWT_SECRET: ci-test-jwt-secret
+          REFRESH_TOKEN_SALT: ${{ secrets.REFRESH_TOKEN_SALT || 'ci-test-salt' }}
+        run: pytest -q --tb=short

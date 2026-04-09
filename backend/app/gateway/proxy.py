@@ -7,9 +7,29 @@ than opened fresh on every call.
 Hop-by-hop headers (defined in RFC 7230 §6.1) are stripped from both the
 forwarded request and the upstream response to ensure correct HTTP proxy
 semantics.
+
+Circuit Breaker
+---------------
+Each unique ``target_url`` has its own circuit breaker with three states:
+
+- **CLOSED** — normal operation; failures are counted.
+- **OPEN**   — upstream is considered down; requests are rejected immediately
+               with HTTP 503 rather than waiting for a timeout. After
+               ``CIRCUIT_RECOVERY_TIMEOUT`` seconds the breaker transitions to
+               HALF-OPEN.
+- **HALF-OPEN** — one probe request is allowed through. Success → CLOSED,
+                  failure → OPEN (reset timer).
+
+Configurable via environment variables:
+  CIRCUIT_FAILURE_THRESHOLD  — consecutive failures to open (default: 5)
+  CIRCUIT_RECOVERY_TIMEOUT   — seconds before attempting recovery (default: 30)
 """
 
-from typing import Optional
+import time
+import os
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Dict, Optional
 
 import httpx
 from fastapi import HTTPException, Request, status
@@ -18,6 +38,120 @@ from fastapi.responses import Response
 from app.logging_config import get_logger
 
 logger = get_logger("gateway.proxy")
+
+
+# ---------------------------------------------------------------------------
+# Circuit breaker
+# ---------------------------------------------------------------------------
+
+class _State(str, Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+@dataclass
+class _Breaker:
+    state: _State = _State.CLOSED
+    failure_count: int = 0
+    last_failure_time: float = 0.0
+    # True while a HALF-OPEN probe is in-flight (prevents concurrent probes)
+    probe_in_flight: bool = False
+
+
+# Per-target-URL registry (in-memory; single-node scope)
+_breakers: Dict[str, _Breaker] = {}
+
+_FAILURE_THRESHOLD = int(os.getenv("CIRCUIT_FAILURE_THRESHOLD", "5"))
+_RECOVERY_TIMEOUT = float(os.getenv("CIRCUIT_RECOVERY_TIMEOUT", "30"))
+
+
+def _get_breaker(target_url: str) -> _Breaker:
+    if target_url not in _breakers:
+        _breakers[target_url] = _Breaker()
+    return _breakers[target_url]
+
+
+def _record_success(target_url: str) -> None:
+    b = _breakers.get(target_url)
+    if b is None:
+        return  # No entry — already in clean CLOSED state
+    if b.state != _State.CLOSED:
+        logger.info("Circuit CLOSED for %s (upstream recovered)", target_url)
+    # Remove the entry once healthy — CLOSED circuits with zero failures need no
+    # persistent state. _get_breaker() recreates on demand. This prevents the dict
+    # from growing unboundedly in long-running multi-tenant deployments.
+    _breakers.pop(target_url, None)
+
+
+def _record_failure(target_url: str) -> None:
+    b = _get_breaker(target_url)
+    b.failure_count += 1
+    b.last_failure_time = time.monotonic()
+    b.probe_in_flight = False
+    if b.failure_count >= _FAILURE_THRESHOLD and b.state == _State.CLOSED:
+        b.state = _State.OPEN
+        logger.warning(
+            "Circuit OPEN for %s after %d consecutive failures",
+            target_url,
+            b.failure_count,
+        )
+
+
+def _check_circuit(target_url: str) -> None:
+    """Raise HTTP 503 if the circuit is open (and not ready to probe)."""
+    b = _get_breaker(target_url)
+
+    if b.state == _State.CLOSED:
+        return  # Normal operation
+
+    if b.state == _State.OPEN:
+        elapsed = time.monotonic() - b.last_failure_time
+        if elapsed >= _RECOVERY_TIMEOUT and not b.probe_in_flight:
+            # Transition to HALF-OPEN and allow one probe through
+            b.state = _State.HALF_OPEN
+            b.probe_in_flight = True
+            logger.info(
+                "Circuit HALF-OPEN for %s — probe request allowed", target_url
+            )
+            return
+        # Still open — reject without hitting the upstream
+        retry_in = max(0, int(_RECOVERY_TIMEOUT - elapsed))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "circuit_open",
+                "upstream": target_url,
+                "retry_after_seconds": retry_in,
+            },
+            headers={"Retry-After": str(retry_in)},
+        )
+
+    # HALF_OPEN and probe already in-flight — queue further requests as 503
+    if b.state == _State.HALF_OPEN and b.probe_in_flight:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "circuit_half_open",
+                "upstream": target_url,
+                "message": "Upstream recovery probe in progress",
+            },
+        )
+
+
+def get_circuit_status() -> dict:
+    """Return a summary of all circuit breaker states (for /health or /metrics)."""
+    return {
+        url: {
+            "state": b.state.value,
+            "failure_count": b.failure_count,
+            "seconds_since_last_failure": (
+                round(time.monotonic() - b.last_failure_time, 1)
+                if b.last_failure_time else None
+            ),
+        }
+        for url, b in _breakers.items()
+    }
 
 # ---------------------------------------------------------------------------
 # Hop-by-hop headers — must NOT be forwarded (RFC 7230 §6.1)
@@ -149,6 +283,9 @@ async def proxy_request(
         api_id,
     )
 
+    # Circuit breaker check — raises 503 immediately if the circuit is open
+    _check_circuit(target_url)
+
     try:
         upstream_resp = await client.request(
             method=request.method,
@@ -156,20 +293,25 @@ async def proxy_request(
             headers=fwd_headers,
             content=body,
         )
+        # Record success only for connection-level outcomes, not HTTP error codes
+        _record_success(target_url)
     except httpx.ConnectError as exc:
         logger.error("Gateway connect error → %s: %s", upstream_url, exc)
+        _record_failure(target_url)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Unable to connect to upstream: {target_url}",
         )
     except httpx.TimeoutException as exc:
         logger.error("Gateway timeout → %s: %s", upstream_url, exc)
+        _record_failure(target_url)
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Upstream request timed out",
         )
     except httpx.HTTPError as exc:
         logger.error("Gateway HTTP error → %s: %s", upstream_url, exc)
+        _record_failure(target_url)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Gateway proxy error",

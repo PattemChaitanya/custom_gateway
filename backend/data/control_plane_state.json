@@ -1,39 +1,13 @@
 {
   "version": "control-plane-state/v1",
-  "saved_at": 1773339291.844778,
+  "saved_at": 1773340300.4077559,
   "registry": {
     "services": {},
     "rr_counters": {}
   },
   "scheduler": {
-    "queue": [
-      "2aed7758-bd1e-4d65-b196-69c26cc7678b",
-      "7938bc56-ab68-4a03-ae40-006d9586d67e"
-    ],
-    "jobs": {
-      "2aed7758-bd1e-4d65-b196-69c26cc7678b": {
-        "id": "2aed7758-bd1e-4d65-b196-69c26cc7678b",
-        "job_type": "reconcile",
-        "payload": {},
-        "max_retries": 3,
-        "created_at": 1773229320.6199396,
-        "available_at": 1773229320.6199405,
-        "attempts": 1,
-        "lease_owner": "worker-1",
-        "lease_expires_at": 1773229356.084962
-      },
-      "7938bc56-ab68-4a03-ae40-006d9586d67e": {
-        "id": "7938bc56-ab68-4a03-ae40-006d9586d67e",
-        "job_type": "reconcile",
-        "payload": {},
-        "max_retries": 3,
-        "created_at": 1773333975.7461607,
-        "available_at": 1773333975.7461615,
-        "attempts": 0,
-        "lease_owner": null,
-        "lease_expires_at": null
-      }
-    },
+    "queue": [],
+    "jobs": {},
     "dlq": [],
     "lease_seconds": 30,
     "base_backoff_seconds": 2,

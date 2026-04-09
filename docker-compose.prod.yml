@@ -18,6 +18,7 @@ services:
       retries: 5
     networks:
       - internal
+      - flowgate_net
 
   # ── Redis ─────────────────────────────────────────────────────────────────
   redis:
@@ -31,6 +32,7 @@ services:
       retries: 5
     networks:
       - internal
+      - flowgate_net
 
   # ── Backend (FastAPI) ─────────────────────────────────────────────────────
   backend:
@@ -49,9 +51,13 @@ services:
       ENCRYPTION_SALT: ${ENCRYPTION_SALT:-gateway-salt}
       FIRST_SUPERUSER_EMAIL: ${FIRST_SUPERUSER_EMAIL:-admin@example.com}
       FIRST_SUPERUSER_PASSWORD: ${FIRST_SUPERUSER_PASSWORD:?FIRST_SUPERUSER_PASSWORD is required}
+      GATEWAY_IMAGE: ${GATEWAY_IMAGE:-flowgate-gateway-runtime:latest}
+      GATEWAY_DOCKER_NETWORK: flowgate_net
+      CONTROL_PLANE_URL: http://backend:8000
     volumes:
       - backend_config:/app/config
       - backend_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker SDK for instance provisioning
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -59,6 +65,7 @@ services:
       retries: 5
     networks:
       - internal
+      - flowgate_net
 
   # ── Frontend (Nginx + React) ──────────────────────────────────────────────
   frontend:
@@ -79,4 +86,7 @@ volumes:
 
 networks:
   internal:
+    driver: bridge
+  flowgate_net:
+    name: flowgate_net
     driver: bridge

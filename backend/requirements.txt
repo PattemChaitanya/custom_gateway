@@ -1,6 +1,5 @@
 fastapi==0.109.1
 uvicorn==0.22.0
-strawberry-graphql==0.289.0
 sqlalchemy==2.0.46
 asyncpg==0.31.0
 alembic==1.11.1
@@ -27,3 +26,5 @@ psycopg2-binary==2.9.11
 boto3==1.42.39
 pymongo==4.16.0
 jsonschema==4.23.0
+docker==7.1.0
+apscheduler==3.10.4

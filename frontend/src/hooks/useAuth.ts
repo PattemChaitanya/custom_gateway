@@ -5,6 +5,7 @@ export interface UserProfile {
   email?: string | null;
   is_active?: boolean;
   is_superuser?: boolean;
+  account_id?: number | null;
   roles?: string[];
   permissions?: string[];
 }
